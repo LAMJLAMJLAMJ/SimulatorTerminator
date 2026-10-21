@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  protocol:
+    # The TypeScript protocol is generated from the Rust types and must be committed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p ra-api --features ts
+      - name: Generated protocol is up to date
+        run: |
+          git add -N apps/web/src/engine/protocol
+          git diff --exit-code -- apps/web/src/engine/protocol
+
+  web:
+    # Builds the wasm engine and the web app, then runs it in headless Chromium.
+    # The project it saves must match the committed sample byte for byte.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: wasm-bindgen version from Cargo.lock
+        id: wb
+        working-directory: .
+        run: echo "version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/version = "\(.*\)"/\1/p')" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wb.outputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run wasm
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Smoke test in Chromium
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          npx --yes wait-on http://localhost:4173/
+          npm run smoke -- "$RUNNER_TEMP/smoke.raproj"
+          cmp "$RUNNER_TEMP/smoke.raproj" ../../validation/formats/1.0-test-room.raproj
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pytest
+      - run: pytest python

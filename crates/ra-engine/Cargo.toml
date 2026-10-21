@@ -1,0 +1,20 @@
+[package]
+name = "ra-engine"
+description = "Solver trait, image sources, ray tracer, direct-field mapper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs", "ra-core/ts", "ra-geom/ts"]
+
+[dependencies]
+ra-core.workspace = true
+ra-geom.workspace = true
+ra-speaker.workspace = true
+serde.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[lints]
+workspace = true

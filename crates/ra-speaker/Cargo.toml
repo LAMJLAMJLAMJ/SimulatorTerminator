@@ -1,0 +1,20 @@
+[package]
+name = "ra-speaker"
+description = "Internal loudspeaker model, CLF and SOFA readers, coherent summation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs", "ra-core/ts"]
+
+[dependencies]
+ra-core.workspace = true
+serde.workspace = true
+num-complex.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[lints]
+workspace = true

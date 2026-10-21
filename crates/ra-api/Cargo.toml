@@ -1,0 +1,25 @@
+[package]
+name = "ra-api"
+description = "The engine facade: the only surface the WebAssembly and Tauri wrappers see"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs", "ra-core/ts", "ra-geom/ts", "ra-engine/ts", "ra-project/ts"]
+
+[dependencies]
+ra-core.workspace = true
+ra-geom.workspace = true
+ra-speaker.workspace = true
+ra-engine.workspace = true
+ra-metrics.workspace = true
+ra-project.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[lints]
+workspace = true
