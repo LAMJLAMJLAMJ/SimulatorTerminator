@@ -179,10 +179,12 @@ impl Engine {
                 };
                 let arrays = SceneArrays {
                     vertices: le::<f32>(&bufs[0])?
-                        .chunks_exact(3)
-                        .map(|c| to_z_up([c[0], c[1], c[2]].map(|x| (f64::from(x) * k) as f32)))
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .map(|c| to_z_up(c.map(|x| (f64::from(x) * k) as f32)))
                         .collect(),
-                    triangles: le::<u32>(&bufs[1])?.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+                    triangles: le::<u32>(&bufs[1])?.as_chunks::<3>().0.to_vec(),
                     tri_group: le::<u16>(&bufs[2])?,
                     tri_group_back: (!bufs[3].is_empty()).then(|| le::<u16>(&bufs[3])).transpose()?,
                     tri_flags: (!bufs[4].is_empty()).then(|| bufs[4].clone()),
