@@ -198,8 +198,8 @@ pub fn read(bytes: &[u8]) -> Result<Project, ProjectError> {
             let tri_group_back = optional::<u16>(&mut entries, TRI_GROUP_BACK)?;
             let tri_flags = optional::<u8>(&mut entries, TRI_FLAGS)?;
             let arrays = SceneArrays {
-                vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
-                triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+                vertices: v.as_chunks::<3>().0.to_vec(),
+                triangles: t.as_chunks::<3>().0.to_vec(),
                 tri_group,
                 tri_group_back,
                 tri_flags,
