@@ -1,0 +1,18 @@
+[package]
+name = "ra-wasm"
+description = "wasm-bindgen wrapper around ra-api for the browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ra-api.workspace = true
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+[lints]
+workspace = true

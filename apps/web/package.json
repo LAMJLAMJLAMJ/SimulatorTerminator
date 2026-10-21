@@ -1,0 +1,20 @@
+{
+  "name": "@simulatorterminator/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "cargo build -p ra-wasm --target wasm32-unknown-unknown --release && wasm-bindgen ../../target/wasm32-unknown-unknown/release/ra_wasm.wasm --target web --out-dir src/engine/wasm",
+    "protocol": "cargo test -p ra-api --features ts",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "smoke": "node e2e/smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "playwright": "1.56.1"
+  }
+}

@@ -1,0 +1,8 @@
+/target
+node_modules/
+apps/web/dist/
+apps/web/src/engine/wasm/
+*.raproj
+!validation/formats/*.raproj
+__pycache__/
+.DS_Store

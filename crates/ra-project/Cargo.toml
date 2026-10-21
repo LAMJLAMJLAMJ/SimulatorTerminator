@@ -1,0 +1,23 @@
+[package]
+name = "ra-project"
+description = "Reads and writes .raproj project files: a ZIP of JSON documents and .npy arrays"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs", "ra-core/ts"]
+
+[dependencies]
+ra-core.workspace = true
+ra-geom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zip.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[lints]
+workspace = true
