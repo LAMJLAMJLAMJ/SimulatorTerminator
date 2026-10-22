@@ -1,0 +1,9 @@
+{
+ "mean_free_path": {
+  "default": [
+   "rel",
+   0.01
+  ],
+  "bands": {}
+ }
+}

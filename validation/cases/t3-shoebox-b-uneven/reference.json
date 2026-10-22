@@ -1,0 +1,9 @@
+{
+ "formulas": {},
+ "solvers": {
+  "ease5": null,
+  "treble_ga": null,
+  "treble_wave": null
+ },
+ "fill_in": "per receiver and octave band: T20 T30 EDT C80 D50 Ts STI, plus version and settings"
+}

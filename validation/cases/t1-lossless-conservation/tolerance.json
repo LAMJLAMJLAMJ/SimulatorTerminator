@@ -1,0 +1,9 @@
+{
+ "energy_lost_fraction": {
+  "default": [
+   "abs",
+   0.001
+  ],
+  "bands": {}
+ }
+}

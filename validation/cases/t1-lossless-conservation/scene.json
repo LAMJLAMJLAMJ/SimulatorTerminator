@@ -1,0 +1,233 @@
+{
+ "name": "t1-lossless-conservation",
+ "purpose": "Rigid walls, no air: no energy may leave the room (leaks through edges and corners).",
+ "tier": 1,
+ "requires": [
+  "rt"
+ ],
+ "bands_hz": [
+  1000
+ ],
+ "speed_of_sound": 343.0,
+ "air": {
+  "m_per_m": [
+   0.0
+  ]
+ },
+ "surfaces": [
+  {
+   "name": "x0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  },
+  {
+   "name": "x1",
+   "polygon": [
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  },
+  {
+   "name": "y0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  },
+  {
+   "name": "y1",
+   "polygon": [
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  },
+  {
+   "name": "z0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  },
+  {
+   "name": "z1",
+   "polygon": [
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    0.5
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "name": "S1",
+   "position": [
+    5.0,
+    4.0,
+    3.0
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "receivers": [
+  {
+   "name": "R1",
+   "position": [
+    7.3,
+    5.2,
+    1.2
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "solver": {
+  "n_rays": 20000,
+  "seeds": [
+   0
+  ]
+ }
+}

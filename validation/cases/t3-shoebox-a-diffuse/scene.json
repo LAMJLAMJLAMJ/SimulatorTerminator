@@ -1,0 +1,255 @@
+{
+ "name": "t3-shoebox-a-diffuse",
+ "purpose": "Cross-solver shoebox; reference values come from EASE 5 and Treble exports.",
+ "tier": 3,
+ "requires": [
+  "ism",
+  "rt"
+ ],
+ "bands_hz": [
+  1000
+ ],
+ "speed_of_sound": 343.0,
+ "air": {
+  "m_per_m": [
+   0.0
+  ]
+ },
+ "surfaces": [
+  {
+   "name": "x0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "x1",
+   "polygon": [
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "y0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "y1",
+   "polygon": [
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "z0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "z1",
+   "polygon": [
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    0.1
+   ],
+   "scattering": [
+    1.0
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "name": "S1",
+   "position": [
+    3.1,
+    2.7,
+    1.6
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "receivers": [
+  {
+   "name": "R1",
+   "position": [
+    7.3,
+    5.2,
+    1.2
+   ],
+   "directivity": "omni"
+  },
+  {
+   "name": "R2",
+   "position": [
+    2.0,
+    6.5,
+    1.2
+   ],
+   "directivity": "omni"
+  },
+  {
+   "name": "R3",
+   "position": [
+    8.5,
+    1.5,
+    1.2
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "solver": {
+  "max_order": 3,
+  "n_rays": 50000,
+  "seeds": [
+   0,
+   1,
+   2
+  ]
+ }
+}

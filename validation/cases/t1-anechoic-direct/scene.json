@@ -1,0 +1,230 @@
+{
+ "name": "t1-anechoic-direct",
+ "purpose": "All walls fully absorbing: the response is the direct sound alone, 1/(4 pi r) at r/c.",
+ "tier": 1,
+ "requires": [
+  "ism"
+ ],
+ "bands_hz": [
+  1000
+ ],
+ "speed_of_sound": 343.0,
+ "air": {
+  "m_per_m": [
+   0.0
+  ]
+ },
+ "surfaces": [
+  {
+   "name": "x0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  },
+  {
+   "name": "x1",
+   "polygon": [
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  },
+  {
+   "name": "y0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     0,
+     0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  },
+  {
+   "name": "y1",
+   "polygon": [
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  },
+  {
+   "name": "z0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     8.0,
+     0
+    ],
+    [
+     10.0,
+     0,
+     0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  },
+  {
+   "name": "z1",
+   "polygon": [
+    [
+     0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     0,
+     6.0
+    ],
+    [
+     10.0,
+     8.0,
+     6.0
+    ],
+    [
+     0,
+     8.0,
+     6.0
+    ]
+   ],
+   "absorption": [
+    1.0
+   ],
+   "scattering": [
+    0.0
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "name": "S1",
+   "position": [
+    3.1,
+    2.7,
+    1.6
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "receivers": [
+  {
+   "name": "R1",
+   "position": [
+    7.3,
+    5.2,
+    1.2
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "solver": {
+  "max_order": 3
+ }
+}
