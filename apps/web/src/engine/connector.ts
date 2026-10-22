@@ -51,7 +51,6 @@ export class EngineConnector {
       raw.vertices,
       raw.triangles,
       raw.triGroup,
-      raw.triGroupBack ?? new Uint16Array(),
       raw.triFlags ?? new Uint8Array(),
     ].map((a) => a.slice().buffer as ArrayBuffer);
     const cmd: Command = {
@@ -61,7 +60,7 @@ export class EngineConnector {
         groups: raw.groups.map((g) => ({
           key: g.key,
           layer_path: g.layerPath,
-          material: g.material,
+          material: g.material ?? null,
           label: g.label,
           acoustic_material: null,
         })),

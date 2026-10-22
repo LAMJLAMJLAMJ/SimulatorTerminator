@@ -13,7 +13,6 @@ scene/
   vertices.npy                float32 [V, 3], metres, Z up, relative to origin
   triangles.npy               uint32  [T, 3]
   tri_group.npy               uint16  [T]
-  tri_group_back.npy          uint16  [T], optional, SketchUp back-face paint
   tri_flags.npy               uint8   [T], optional, bit 0 = curved source face
 materials/library.json        absorption and scattering per band, source of each value
 speakers/<sha256>/            converted loudspeaker models (planned)

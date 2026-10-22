@@ -24,7 +24,7 @@ pub enum Command {
     /// Replies with bufs[0] = the `.raproj` bytes.
     SaveProject,
     /// bufs = vertices (f32 × 3), triangles (u32 × 3), tri_group (u16), then optionally
-    /// tri_group_back (u16) and tri_flags (u8); an empty buffer skips an optional one.
+    /// tri_flags (u8); an empty buffer skips it.
     /// Vertices are in source units and axes; the engine converts them to metres, Z up.
     SetScene {
         meta: SceneMeta,
@@ -166,7 +166,7 @@ impl Engine {
             }
             Command::SaveProject => Reply { event: Event::Ok, bufs: vec![ra_project::write(&self.project)?] },
             Command::SetScene { mut meta, unit_scale_to_metres: k, up_axis } => {
-                bufs.resize(5, Vec::new());
+                bufs.resize(4, Vec::new());
                 // right-handed Y up to right-handed Z up: (x, y, z) -> (x, -z, y)
                 let to_z_up = |[x, y, z]: [f32; 3]| match up_axis {
                     UpAxis::Z => [x, y, z],
@@ -186,8 +186,7 @@ impl Engine {
                         .collect(),
                     triangles: le::<u32>(&bufs[1])?.as_chunks::<3>().0.to_vec(),
                     tri_group: le::<u16>(&bufs[2])?,
-                    tri_group_back: (!bufs[3].is_empty()).then(|| le::<u16>(&bufs[3])).transpose()?,
-                    tri_flags: (!bufs[4].is_empty()).then(|| bufs[4].clone()),
+                    tri_flags: (!bufs[3].is_empty()).then(|| bufs[3].clone()),
                 };
                 arrays.validate(meta.groups.len()).map_err(EngineError::Invalid)?;
                 let report = ra_geom::check_mesh(&arrays);
@@ -282,9 +281,9 @@ mod tests {
         let meta = SceneMeta {
             origin: [0.0; 3],
             groups: vec![Group {
-                key: "Room|Default".into(),
+                key: "Room".into(),
                 layer_path: "Room".into(),
-                material: "Default".into(),
+                material: Some("Default".into()),
                 label: "Room".into(),
                 acoustic_material: None,
             }],
@@ -344,7 +343,7 @@ mod tests {
         let saved = e.handle(Command::SaveProject, vec![], &mut |_| {});
         let mut other = Engine::new();
         match other.handle(Command::OpenProject, saved.bufs, &mut |_| {}).event {
-            Event::Project { scene: Some(doc), .. } => assert_eq!(doc.meta.groups[0].key, "Room|Default"),
+            Event::Project { scene: Some(doc), .. } => assert_eq!(doc.meta.groups[0].key, "Room"),
             ev => panic!("{ev:?}"),
         }
     }
