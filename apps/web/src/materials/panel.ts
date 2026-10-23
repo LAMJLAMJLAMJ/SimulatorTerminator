@@ -8,6 +8,8 @@ export class MaterialsPanel {
   constructor(
     private engine: EngineConnector,
     private root: HTMLElement,
+    /** Called after the mapping or the library changes. */
+    private onChange: () => void = () => {},
   ) {
     root.querySelector<HTMLButtonElement>('#suggest')!.onclick = () => this.suggest();
     const input = root.querySelector<HTMLInputElement>('#library')!;
@@ -25,6 +27,7 @@ export class MaterialsPanel {
       const { materials, warnings } = parseMaterialCsv(decode(await file.arrayBuffer()), file.name);
       const project = await this.engine.project();
       this.render(await this.engine.setMaterials(mergeLibrary(project.materials, materials)));
+      this.onChange();
       status.textContent = [`Imported ${materials.length} materials from ${file.name}.`, ...warnings].join('\n');
     } catch (e) {
       status.textContent = `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`;
@@ -46,6 +49,7 @@ export class MaterialsPanel {
       if (m) assignments[g.key] = m;
     }
     this.render(await this.engine.assignMaterials(assignments));
+    this.onChange();
   }
 
   private render({ scene, materials }: ProjectInfo) {
@@ -61,6 +65,7 @@ export class MaterialsPanel {
       select.onchange = async () => {
         try {
           await this.engine.assignMaterials({ [g.key]: select.value || null });
+          this.onChange();
         } catch (e) {
           alert(e instanceof Error ? e.message : String(e));
           this.render(await this.engine.project());

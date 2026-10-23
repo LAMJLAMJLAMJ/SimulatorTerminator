@@ -40,6 +40,12 @@ await page.waitForFunction(() => document.querySelector('#out').textContent.star
 await page.waitForFunction(isCarpet, 'Floor carpet', { timeout: 10000 });
 console.log('layer mapping kept across re-import');
 
+// The reverberation estimate follows the mapping.
+await page.waitForFunction(() => document.querySelector('#reverb-status').textContent.startsWith('Volume'), null, { timeout: 30000 });
+const rt = await page.$$eval('#reverb tbody tr', (rows) => rows.map((r) => Number(r.children[1].textContent)));
+if (!rt.every((t) => t > 0 && t < 20)) throw new Error(`unexpected reverberation ${rt}`);
+console.log('Sabine s per octave', rt.join(' '), '|', (await page.textContent('#reverb-status')).split('\n')[0]);
+
 // A material library from CSV joins the pickers.
 await page.setInputFiles('#library', new URL('../test/fixtures/materials-sample.csv', import.meta.url).pathname);
 await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Imported 2'), null, { timeout: 10000 });

@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use ra_core::{BandSet, Material, SceneArrays, SceneMeta};
+use ra_core::{AirConditions, BandSet, Material, SceneArrays, SceneMeta, TRI_FLAG_CONTACT};
 use ra_engine::{Estimate, PreparedScene, RunRequest, Solver};
 use ra_geom::ImportReport;
 use ra_project::{Project, Scene, SceneDoc};
@@ -49,6 +49,12 @@ pub enum Command {
         #[serde(default)]
         up_axis: UpAxis,
     },
+    /// Sabine and Eyring reverberation times of the loaded scene from its volume, the area
+    /// of each layer that faces the room and the layers' materials.
+    Reverberation {
+        #[serde(default)]
+        air: AirConditions,
+    },
     Estimate {
         run: RunRequest,
     },
@@ -82,6 +88,7 @@ pub enum Event {
     Capabilities(Capabilities),
     Project { manifest: ra_project::Manifest, scene: Option<Box<SceneDoc>>, materials: Vec<Material> },
     SceneReport { report: ImportReport },
+    Reverberation { report: ReverberationReport },
     Estimate { estimate: Estimate },
     Progress { done: u32, total: u32 },
     RunDone { chunks: u32, receivers: u32 },
@@ -95,6 +102,37 @@ pub struct Capabilities {
     pub target: String,
     pub solvers: Vec<String>,
     pub format: String,
+}
+
+/// Diffuse-field reverberation estimate, one value per band of the project.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ReverberationReport {
+    pub bands_hz: Vec<f32>,
+    pub air: AirConditions,
+    pub volume_m3: f64,
+    /// How the volume was found, for the report.
+    pub volume_from: String,
+    /// Surface area facing the room, m²; a panel with air on both sides counts twice.
+    pub area_m2: f64,
+    pub sabine_s: Vec<f64>,
+    pub eyring_s: Vec<f64>,
+    /// Absorption area of the surfaces, m² (sum of area × absorption).
+    pub absorption_area_m2: Vec<f64>,
+    /// Absorption of the air, 4mV, m².
+    pub air_absorption_m2: Vec<f64>,
+    /// Per layer, in scene order.
+    pub layers: Vec<LayerAbsorption>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct LayerAbsorption {
+    pub key: String,
+    pub material: Option<String>,
+    pub area_m2: f64,
+    pub absorption_area_m2: Vec<f64>,
 }
 
 /// An answer and the buffers that go with it.
@@ -230,6 +268,9 @@ impl Engine {
                 self.project.scene = Some(Scene { doc: SceneDoc { meta, report: report.clone() }, arrays });
                 Event::SceneReport { report }.into()
             }
+            Command::Reverberation { air } => {
+                Event::Reverberation { report: self.reverberation(air)? }.into()
+            }
             Command::Estimate { run } => {
                 let (solver, scene) = self.prepare(&run, false)?;
                 Event::Estimate { estimate: solver.estimate(&scene, &run) }.into()
@@ -309,6 +350,118 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    fn reverberation(&self, air: AirConditions) -> Result<ReverberationReport, EngineError> {
+        let scene =
+            self.project.scene.as_ref().ok_or_else(|| EngineError::Invalid("no scene loaded".into()))?;
+        let (meta, report, arrays) = (&scene.doc.meta, &scene.doc.report, &scene.arrays);
+        let mut warnings = Vec::new();
+
+        // Only the area that faces the room absorbs: not the outside of the shell, faces inside
+        // walls or flat against another surface. A hung panel absorbs on both sides.
+        let sealed = report.leak.as_ref().and_then(|l| l.sealed_at_voxel_m);
+        let contact = sealed.and_then(|h| ra_geom::leak::room_contact(arrays, h));
+        let mut area = vec![0.0; meta.groups.len()];
+        match &contact {
+            Some(c) => {
+                for (t, a) in c.facing_area_m2.iter().enumerate() {
+                    let flags = arrays.tri_flags.as_ref().map_or(0, |f| f[t]);
+                    if flags & TRI_FLAG_CONTACT == 0
+                        && let Some(g) = area.get_mut(usize::from(arrays.tri_group[t]))
+                    {
+                        *g += a;
+                    }
+                }
+            }
+            None => {
+                area.clone_from(&report.group_area_m2);
+                area.resize(meta.groups.len(), 0.0);
+                warnings.push(
+                    "The room leaks, so every surface counts once, including any outside the room.".into(),
+                );
+            }
+        }
+
+        let (volume_m3, volume_from) = if let Some(v) = report.enclosed_volume_m3.filter(|v| *v > 0.0) {
+            (v, "closed mesh".to_string())
+        } else if let (Some(c), Some(h)) = (&contact, sealed) {
+            (c.volume_m3, format!("air filled in at {h} m voxels"))
+        } else if let Some(v) = report.room_volume_m3 {
+            warnings.push("Volume is the room shell's, objects inside it included.".into());
+            (v, "room shell".to_string())
+        } else {
+            return Err(EngineError::Invalid(
+                "the room has no volume: it is not closed and leaks at every voxel size".into(),
+            ));
+        };
+
+        let bands = self.project.manifest.bands;
+        let bands_hz = bands.centres_hz().to_vec();
+        let n = bands_hz.len();
+        let mut unassigned = Vec::new();
+        let layers: Vec<LayerAbsorption> = meta
+            .groups
+            .iter()
+            .zip(&area)
+            .map(|(g, &a)| {
+                let material = g
+                    .acoustic_material
+                    .as_ref()
+                    .and_then(|m| self.project.materials.iter().find(|l| &l.name == m));
+                if material.is_none() && a > 0.0 {
+                    unassigned.push((g.layer_path.as_str(), a));
+                }
+                LayerAbsorption {
+                    key: g.key.clone(),
+                    material: material.map(|m| m.name.clone()),
+                    area_m2: a,
+                    absorption_area_m2: (0..n)
+                        .map(|b| material.map_or(0.0, |m| a * f64::from(m.absorption[b])))
+                        .collect(),
+                }
+            })
+            .collect();
+        if !unassigned.is_empty() {
+            let total: f64 = unassigned.iter().map(|(_, a)| a).sum();
+            let names: Vec<&str> = unassigned.iter().map(|(n, _)| *n).collect();
+            warnings.push(format!(
+                "{total:.0} m² on {} without a material counts as not absorbing: {}",
+                if names.len() == 1 { "1 layer".to_string() } else { format!("{} layers", names.len()) },
+                names.join(", ")
+            ));
+        }
+
+        let area_m2: f64 = area.iter().sum();
+        let absorption_area_m2: Vec<f64> =
+            (0..n).map(|b| layers.iter().map(|l| l.absorption_area_m2[b]).sum()).collect();
+        let c = air.speed_of_sound();
+        let air_per_m: Vec<f64> =
+            bands_hz.iter().map(|&f| air.energy_attenuation_per_m(f64::from(f))).collect();
+        let rt: Vec<_> = (0..n)
+            .map(|b| {
+                ra_metrics::statistical::reverberation(
+                    volume_m3,
+                    area_m2,
+                    absorption_area_m2[b],
+                    air_per_m[b],
+                    c,
+                )
+            })
+            .collect();
+        Ok(ReverberationReport {
+            bands_hz,
+            air,
+            volume_m3,
+            volume_from,
+            area_m2,
+            sabine_s: rt.iter().map(|r| r.sabine_s).collect(),
+            eyring_s: rt.iter().map(|r| r.eyring_s).collect(),
+            absorption_area_m2,
+            air_absorption_m2: air_per_m.iter().map(|m| 4.0 * m * volume_m3).collect(),
+            layers,
+            warnings,
+        })
     }
 
     /// `need_materials`: every layer must have an acoustic material, as a run needs them.
@@ -567,6 +720,40 @@ mod tests {
         let reply = e.handle(Command::Run { run: run() }, vec![], &mut |ev| seen.push(ev));
         assert_eq!(reply.event, Event::RunDone { chunks: 3, receivers: 1 });
         assert_eq!(seen.last(), Some(&Event::Progress { done: 3, total: 3 }));
+    }
+
+    #[test]
+    fn reverberation_of_the_test_box() {
+        let mut e = Engine::new();
+        set_scene(&mut e);
+        // Every band at 0.1 on the 6 x 8 x 3 m box: S = 180 m², V = 144 m³.
+        let m = Material {
+            name: "Ten".into(),
+            absorption: vec![0.1; 8],
+            scattering: vec![0.1; 8],
+            source: String::new(),
+        };
+        e.handle(Command::SetMaterials { materials: vec![m] }, vec![], &mut |_| {});
+        let ev =
+            e.handle(Command::Reverberation { air: AirConditions::default() }, vec![], &mut |_| {}).event;
+        let Event::Reverberation { report: r } = ev else { panic!("{ev:?}") };
+        assert!(r.warnings.iter().any(|w| w.contains("without a material")), "{:?}", r.warnings);
+        // Only the air absorbs.
+        assert!(r.absorption_area_m2.iter().all(|a| *a == 0.0));
+        assert!(r.sabine_s[4] > 30.0, "{:?}", r.sabine_s);
+
+        assign(&mut e, "Room", Some("Ten"));
+        let ev =
+            e.handle(Command::Reverberation { air: AirConditions::default() }, vec![], &mut |_| {}).event;
+        let Event::Reverberation { report: r } = ev else { panic!("{ev:?}") };
+        assert_eq!(r.volume_from, "closed mesh");
+        assert!((r.volume_m3 - 144.0).abs() < 1e-6);
+        assert!((r.area_m2 / 180.0 - 1.0).abs() < 0.02, "{}", r.area_m2);
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        // 1 kHz: 0.161 · 144 / (18 + 4mV) with 4mV = 0.62 m² = 1.25 s; air takes more at 8 kHz.
+        assert!((r.sabine_s[4] - 1.25).abs() < 0.03, "{:?}", r.sabine_s);
+        assert!(r.eyring_s[4] < r.sabine_s[4]);
+        assert!(r.sabine_s[7] < r.sabine_s[4]);
     }
 
     #[test]
