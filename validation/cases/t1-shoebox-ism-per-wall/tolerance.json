@@ -1,0 +1,23 @@
+{
+ "delay_samples": {
+  "default": [
+   "samples",
+   1
+  ],
+  "bands": {}
+ },
+ "energy_db": {
+  "default": [
+   "db",
+   0.1
+  ],
+  "bands": {}
+ },
+ "count": {
+  "default": [
+   "abs",
+   0
+  ],
+  "bands": {}
+ }
+}

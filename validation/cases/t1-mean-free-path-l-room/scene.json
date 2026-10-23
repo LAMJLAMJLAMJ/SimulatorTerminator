@@ -1,0 +1,315 @@
+{
+ "name": "t1-mean-free-path-l-room",
+ "purpose": "Same in a non-convex L-shaped room: exercises the general mesh intersection path.",
+ "tier": 1,
+ "requires": [
+  "rt"
+ ],
+ "bands_hz": [
+  1000
+ ],
+ "speed_of_sound": 343.0,
+ "air": {
+  "m_per_m": [
+   0.0
+  ]
+ },
+ "surfaces": [
+  {
+   "name": "floor",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     10,
+     0,
+     0
+    ],
+    [
+     10,
+     4,
+     0
+    ],
+    [
+     5,
+     4,
+     0
+    ],
+    [
+     5,
+     8,
+     0
+    ],
+    [
+     0,
+     8,
+     0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "ceiling",
+   "polygon": [
+    [
+     0,
+     8,
+     4.0
+    ],
+    [
+     5,
+     8,
+     4.0
+    ],
+    [
+     5,
+     4,
+     4.0
+    ],
+    [
+     10,
+     4,
+     4.0
+    ],
+    [
+     10,
+     0,
+     4.0
+    ],
+    [
+     0,
+     0,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall0",
+   "polygon": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     10,
+     0,
+     0
+    ],
+    [
+     10,
+     0,
+     4.0
+    ],
+    [
+     0,
+     0,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall1",
+   "polygon": [
+    [
+     10,
+     0,
+     0
+    ],
+    [
+     10,
+     4,
+     0
+    ],
+    [
+     10,
+     4,
+     4.0
+    ],
+    [
+     10,
+     0,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall2",
+   "polygon": [
+    [
+     10,
+     4,
+     0
+    ],
+    [
+     5,
+     4,
+     0
+    ],
+    [
+     5,
+     4,
+     4.0
+    ],
+    [
+     10,
+     4,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall3",
+   "polygon": [
+    [
+     5,
+     4,
+     0
+    ],
+    [
+     5,
+     8,
+     0
+    ],
+    [
+     5,
+     8,
+     4.0
+    ],
+    [
+     5,
+     4,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall4",
+   "polygon": [
+    [
+     5,
+     8,
+     0
+    ],
+    [
+     0,
+     8,
+     0
+    ],
+    [
+     0,
+     8,
+     4.0
+    ],
+    [
+     5,
+     8,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  },
+  {
+   "name": "wall5",
+   "polygon": [
+    [
+     0,
+     8,
+     0
+    ],
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     4.0
+    ],
+    [
+     0,
+     8,
+     4.0
+    ]
+   ],
+   "absorption": [
+    0.0
+   ],
+   "scattering": [
+    1.0
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "name": "S1",
+   "position": [
+    2.5,
+    2.0,
+    2.0
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "receivers": [
+  {
+   "name": "R1",
+   "position": [
+    2.5,
+    6.0,
+    1.2
+   ],
+   "directivity": "omni"
+  }
+ ],
+ "solver": {
+  "n_rays": 20000,
+  "seeds": [
+   0
+  ]
+ }
+}

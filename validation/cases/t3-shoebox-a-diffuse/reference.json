@@ -1,0 +1,13 @@
+{
+ "formulas": {
+  "T_sabine": 2.056772243602398,
+  "T_eyring": 1.9521281105742376,
+  "T_kuttruff": 1.994149024477743
+ },
+ "solvers": {
+  "ease5": null,
+  "treble_ga": null,
+  "treble_wave": null
+ },
+ "fill_in": "per receiver and octave band: T20 T30 EDT C80 D50 Ts STI, plus version and settings"
+}

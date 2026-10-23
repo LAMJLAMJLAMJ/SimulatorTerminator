@@ -64,11 +64,18 @@ jobs:
           cmp "$RUNNER_TEMP/smoke.raproj" ../../validation/formats/1.0-test-room.raproj
 
   python:
+    # Project reader, analytic references, metrics cross-checks (Rust against
+    # Python and pyrato) and the validation harness self-tests.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install numpy pytest
+      - run: pip install numpy pytest pyfar pyrato
       - run: pytest python
+      - name: Tier 1 harness against the reference stand-in engine
+        run: pytest python/tests/test_engine_tier1.py
+        env:
+          RA_ENGINE: mock

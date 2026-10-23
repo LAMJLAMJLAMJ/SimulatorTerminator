@@ -1,0 +1,11 @@
+{
+ "image_sources": [
+  {
+   "order": 0,
+   "delay_s": 0.014297609137305222,
+   "amplitude": 0.016226789248006357
+  }
+ ],
+ "count": null,
+ "formula": "Allen & Berkley 1979 image lattice; amplitude = prod(sqrt(1-alpha)) / (4 pi r)"
+}
