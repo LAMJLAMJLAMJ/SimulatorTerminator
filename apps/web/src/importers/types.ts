@@ -14,12 +14,12 @@ export interface GeometryImporter {
 }
 
 export interface RawGroup {
-  /** Layer path + resolved material, e.g. "Walls|Plaster". Stable across re-imports. */
+  /** Layer or tag path. Stable across re-imports; acoustic materials are assigned per layer. */
   key: string;
   /** Rhino layer or SketchUp tag path. */
   layerPath: string;
-  /** Resolved: object over layer (Rhino), face paint (SketchUp). */
-  material: string;
+  /** Informational only: the source object or face material. */
+  material?: string;
   label: string;
 }
 
@@ -35,8 +35,6 @@ export interface RawScene {
   vertices: Float32Array;
   triangles: Uint32Array;
   triGroup: Uint16Array;
-  /** SketchUp only: group of the back-face paint. */
-  triGroupBack?: Uint16Array;
   /** Bit 0 = from a curved or smoothed source face. */
   triFlags?: Uint8Array;
   warnings: string[];

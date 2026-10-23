@@ -102,7 +102,6 @@ const SCENE: &str = "scene/scene.json";
 const VERTICES: &str = "scene/vertices.npy";
 const TRIANGLES: &str = "scene/triangles.npy";
 const TRI_GROUP: &str = "scene/tri_group.npy";
-const TRI_GROUP_BACK: &str = "scene/tri_group_back.npy";
 const TRI_FLAGS: &str = "scene/tri_flags.npy";
 const MATERIALS: &str = "materials/library.json";
 
@@ -124,11 +123,6 @@ pub fn write(project: &Project) -> Result<Vec<u8>, ProjectError> {
         for (name, bytes) in arrays {
             hasher.update(&bytes);
             entries.insert(name.into(), bytes);
-        }
-        if let Some(back) = &a.tri_group_back {
-            let bytes = npy::write(&[back.len()], back);
-            hasher.update(&bytes);
-            entries.insert(TRI_GROUP_BACK.into(), bytes);
         }
         if let Some(flags) = &a.tri_flags {
             let bytes = npy::write(&[flags.len()], flags);
@@ -195,13 +189,11 @@ pub fn read(bytes: &[u8]) -> Result<Project, ProjectError> {
             let (_, v) = npy::read::<f32>(&take(&mut entries, VERTICES)?)?;
             let (_, t) = npy::read::<u32>(&take(&mut entries, TRIANGLES)?)?;
             let (_, tri_group) = npy::read::<u16>(&take(&mut entries, TRI_GROUP)?)?;
-            let tri_group_back = optional::<u16>(&mut entries, TRI_GROUP_BACK)?;
             let tri_flags = optional::<u8>(&mut entries, TRI_FLAGS)?;
             let arrays = SceneArrays {
                 vertices: v.as_chunks::<3>().0.to_vec(),
                 triangles: t.as_chunks::<3>().0.to_vec(),
                 tri_group,
-                tri_group_back,
                 tri_flags,
             };
             arrays.validate(doc.meta.groups.len()).map_err(ProjectError::Malformed)?;
@@ -255,9 +247,9 @@ mod tests {
         let meta = SceneMeta {
             origin: [512_000.0, 6_150_000.0, 12.5],
             groups: vec![Group {
-                key: "Walls|Plaster".into(),
+                key: "Walls".into(),
                 layer_path: "Walls".into(),
-                material: "Plaster".into(),
+                material: Some("Plaster".into()),
                 label: "Walls".into(),
                 acoustic_material: Some("Plaster on brick".into()),
             }],

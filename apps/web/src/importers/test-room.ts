@@ -11,7 +11,7 @@ export function testRoom(x = 20000, y = 30000, z = 12000): RawScene {
     unitScaleToMetres: 0.001,
     upAxis: 'z',
     origin: [0, 0, 0],
-    groups: [{ key: 'Room|Default', layerPath: 'Room', material: 'Default', label: 'Room' }],
+    groups: [{ key: 'Room', layerPath: 'Room', material: 'Default', label: 'Room' }],
     vertices,
     triangles,
     triGroup: new Uint16Array(12),
