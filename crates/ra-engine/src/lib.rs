@@ -12,6 +12,7 @@ pub mod rt;
 use std::sync::Arc;
 
 use bvh::Bvh;
+pub use ra_core::Point;
 use ra_core::{AirConditions, BandSet, Material, SceneArrays, SceneMeta};
 use ra_speaker::SpeakerModel;
 use serde::{Deserialize, Serialize};
@@ -35,8 +36,9 @@ pub struct RunRequest {
     /// Temperature and humidity: the speed of sound and, unless given above, air absorption.
     #[serde(default)]
     pub air: AirConditions,
-    /// Radius of the receiver spheres that count passing rays, m.
-    #[serde(default = "default_receiver_radius")]
+    /// Radius of the receiver spheres that count passing rays, m. 0 picks one from the room
+    /// volume and the number of rays (see `auto_receiver_radius`).
+    #[serde(default)]
     pub receiver_radius_m: f64,
     /// Length of the histograms, seconds.
     pub duration_s: f32,
@@ -48,16 +50,12 @@ pub struct RunRequest {
     pub listening: Vec<String>,
 }
 
-fn default_receiver_radius() -> f64 {
-    0.5
-}
-
-/// A named position in the scene, m, Z up, relative to the scene origin.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
-pub struct Point {
-    pub id: String,
-    pub position: [f64; 3],
+/// A receiver radius that a ray crosses about once per millisecond in the late decay:
+/// rays cross a sphere of radius r at N·c·πr²/V per second, so r = √(V / (π·N·c·1 ms)).
+/// Larger spheres smooth the decay but blur the early reflections, so it is never under
+/// 0.3 m and never over 5 m.
+pub fn auto_receiver_radius(volume_m3: f64, n_rays: u64, c: f64) -> f64 {
+    (volume_m3 / (std::f64::consts::PI * n_rays.max(1) as f64 * c * 0.001)).sqrt().clamp(0.3, 5.0)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -89,7 +87,7 @@ pub struct PreparedScene {
     /// Indexed by group, from the group's assigned acoustic material.
     pub materials: Vec<Material>,
     pub speakers: Vec<SpeakerModel>,
-    /// Omnidirectional sources; loudspeakers come with the speaker work.
+    /// Omnidirectional sources, positions relative to the scene origin.
     pub sources: Vec<Point>,
     pub receivers: Vec<Point>,
     pub bvh: Arc<Bvh>,
@@ -220,6 +218,15 @@ mod tests {
         assert_eq!(plan.len(), 7);
         assert_eq!(plan.iter().map(|c| c.n_rays).sum::<u64>(), 100_000);
         assert!(plan.windows(2).all(|w| w[0].first_ray + w[0].n_rays == w[1].first_ray));
+    }
+
+    #[test]
+    fn auto_receiver_radius_grows_with_the_room() {
+        // A 1000 m³ room and a 500 000 m³ arena with 20 000 rays.
+        assert_eq!(auto_receiver_radius(1000.0, 20_000, 343.0), 0.3);
+        let r = auto_receiver_radius(500_000.0, 20_000, 343.0);
+        assert!((r - 4.82).abs() < 0.01, "{r}");
+        assert_eq!(auto_receiver_radius(500_000.0, 1000, 343.0), 5.0);
     }
 
     #[test]

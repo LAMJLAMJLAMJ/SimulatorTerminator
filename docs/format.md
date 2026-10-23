@@ -1,4 +1,4 @@
-# `.raproj` project format, version 1.1
+# `.raproj` project format, version 1.2
 
 A project is one ZIP file of JSON documents and NumPy `.npy` arrays (version 1.0,
 little-endian, C order). Only `crates/ra-project` reads and writes it; the browser and
@@ -17,7 +17,8 @@ scene/
                               bit 1 = flat against another surface (1.1)
 materials/library.json        absorption and scattering per band, source of each value
 speakers/<sha256>/            converted loudspeaker models (planned)
-setup/                        sources, receivers, grids (planned)
+setup/points.json             sources and receivers: id, position (m, relative to the
+                              scene origin), from_model (1.2); grids (planned)
 runs/<run-id>/                request, summary, histograms, grids, ambisonics (planned)
 originals/                    optional source files
 ```
@@ -54,3 +55,4 @@ leak test are recorded in the import report.
 | --- | --- |
 | 1.0 | First version. |
 | 1.1 | Import report: repairs, parts, room volume, contact faces, area per group, leak test. `tri_flags` bit 1. |
+| 1.2 | `setup/points.json`: sources and receivers, written when there are any. |

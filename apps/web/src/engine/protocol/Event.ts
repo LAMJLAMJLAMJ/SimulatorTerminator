@@ -5,6 +5,8 @@ import type { ImportReport } from "./ImportReport";
 import type { Manifest } from "./Manifest";
 import type { Material } from "./Material";
 import type { ReverberationReport } from "./ReverberationReport";
+import type { RunResults } from "./RunResults";
 import type { SceneDoc } from "./SceneDoc";
+import type { Setup } from "./Setup";
 
-export type Event = { "type": "ok" } | { "type": "error", message: string, } | { "type": "capabilities" } & Capabilities | { "type": "project", manifest: Manifest, scene: SceneDoc | null, materials: Array<Material>, } | { "type": "scene_report", report: ImportReport, } | { "type": "reverberation", report: ReverberationReport, } | { "type": "estimate", estimate: Estimate, } | { "type": "progress", done: number, total: number, } | { "type": "run_done", chunks: number, receivers: number, };
+export type Event = { "type": "ok" } | { "type": "error", message: string, } | { "type": "capabilities" } & Capabilities | { "type": "project", manifest: Manifest, scene: SceneDoc | null, materials: Array<Material>, setup: Setup, } | { "type": "scene_report", report: ImportReport, } | { "type": "reverberation", report: ReverberationReport, } | { "type": "estimate", estimate: Estimate, } | { "type": "progress", done: number, total: number, } | { "type": "run_done", chunks: number, results: RunResults, };

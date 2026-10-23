@@ -11,6 +11,7 @@ ts = ["dep:ts-rs"]
 
 [dependencies]
 serde.workspace = true
+libm.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]

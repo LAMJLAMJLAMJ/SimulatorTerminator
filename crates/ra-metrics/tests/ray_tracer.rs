@@ -27,8 +27,8 @@ fn shoebox(alpha: f32) -> PreparedScene {
         meta,
         ra_geom::shoebox([10.0, 8.0, 4.0]),
         vec![m],
-        vec![Point { id: "S".into(), position: [2.5, 3.0, 1.5] }],
-        vec![Point { id: "R".into(), position: [7.0, 5.0, 1.2] }],
+        vec![Point { id: "S".into(), position: [2.5, 3.0, 1.5], from_model: false }],
+        vec![Point { id: "R".into(), position: [7.0, 5.0, 1.2], from_model: false }],
     )
 }
 

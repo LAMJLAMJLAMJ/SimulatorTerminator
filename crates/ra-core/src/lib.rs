@@ -11,4 +11,4 @@ pub mod scene;
 pub use air::AirConditions;
 pub use bands::{Band, BandSet};
 pub use material::Material;
-pub use scene::{Group, SceneArrays, SceneMeta, TRI_FLAG_CONTACT, TRI_FLAG_CURVED};
+pub use scene::{Group, Point, SceneArrays, SceneMeta, Setup, TRI_FLAG_CONTACT, TRI_FLAG_CURVED};

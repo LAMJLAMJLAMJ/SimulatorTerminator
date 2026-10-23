@@ -62,7 +62,7 @@ jobs:
           npx vite preview --port 4173 --strictPort &
           npx --yes wait-on http://localhost:4173/
           npm run smoke -- "$RUNNER_TEMP/smoke.raproj"
-          cmp "$RUNNER_TEMP/smoke.raproj" ../../validation/formats/1.1-test-room.raproj
+          cmp "$RUNNER_TEMP/smoke.raproj" ../../validation/formats/1.2-test-room.raproj
 
   python:
     # Project reader, analytic references, metrics cross-checks (Rust against

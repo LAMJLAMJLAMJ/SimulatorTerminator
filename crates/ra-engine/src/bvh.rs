@@ -159,16 +159,11 @@ fn build(
             (((centroid[t as usize][axis] - clo[axis]) / extent * BINS as f64) as usize).min(BINS - 1)
         };
         let mut count = [0usize; BINS];
-        let mut boxes = [(([f64::INFINITY; 3]), [f64::NEG_INFINITY; 3]); BINS];
+        let mut boxes = [([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]); BINS];
         for &t in &order[start..end] {
             let b = bin_of(t);
             count[b] += 1;
-            for p in corners(t) {
-                for k in 0..3 {
-                    boxes[b].0[k] = boxes[b].0[k].min(p[k]);
-                    boxes[b].1[k] = boxes[b].1[k].max(p[k]);
-                }
-            }
+            boxes[b] = merge(boxes[b], bounds(corners(t).into_iter()));
         }
         let mut right_cost = [0.0; BINS];
         let (mut acc, mut n_acc) = (([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), 0);

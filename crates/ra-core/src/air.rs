@@ -1,4 +1,5 @@
-//! Sound in air: speed and ISO 9613-1:1993 atmospheric absorption.
+//! Sound in air: speed and ISO 9613-1:1993 atmospheric absorption. The maths goes through
+//! `libm`, so the browser and native builds compute the same coefficients bit for bit.
 
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +32,7 @@ impl Default for AirConditions {
 impl AirConditions {
     /// Speed of sound, m/s.
     pub fn speed_of_sound(&self) -> f64 {
-        331.3 * (1.0 + self.temperature_c / 273.15).sqrt()
+        331.3 * libm::sqrt(1.0 + self.temperature_c / 273.15)
     }
 
     /// Pure-tone attenuation at `f_hz`, dB/m (ISO 9613-1 equations 3 to 5).
@@ -39,17 +40,19 @@ impl AirConditions {
         let t = self.temperature_c + 273.15;
         let tr = t / REFERENCE_TEMPERATURE_K;
         let pr = self.pressure_kpa / REFERENCE_PRESSURE_KPA;
-        let psat = 10f64.powf(-6.8346 * (TRIPLE_POINT_K / t).powf(1.261) + 4.6151);
+        let psat = libm::pow(10.0, -6.8346 * libm::pow(TRIPLE_POINT_K / t, 1.261) + 4.6151);
         let h = self.humidity_pct * psat / pr;
         let fr_o = pr * (24.0 + 4.04e4 * h * (0.02 + h) / (0.391 + h));
-        let fr_n = pr * tr.powf(-0.5) * (9.0 + 280.0 * h * (-4.170 * (tr.powf(-1.0 / 3.0) - 1.0)).exp());
+        let fr_n = pr
+            * libm::pow(tr, -0.5)
+            * (9.0 + 280.0 * h * libm::exp(-4.170 * (libm::pow(tr, -1.0 / 3.0) - 1.0)));
         let f2 = f_hz * f_hz;
         8.686
             * f2
-            * (1.84e-11 / pr * tr.sqrt()
-                + tr.powf(-2.5)
-                    * (0.01275 * (-2239.1 / t).exp() / (fr_o + f2 / fr_o)
-                        + 0.1068 * (-3352.0 / t).exp() / (fr_n + f2 / fr_n)))
+            * (1.84e-11 / pr * libm::sqrt(tr)
+                + libm::pow(tr, -2.5)
+                    * (0.01275 * libm::exp(-2239.1 / t) / (fr_o + f2 / fr_o)
+                        + 0.1068 * libm::exp(-3352.0 / t) / (fr_n + f2 / fr_n)))
     }
 
     /// Energy attenuation coefficient m at `f_hz`, 1/m: intensity falls as e^(-m·d).

@@ -33,6 +33,33 @@
         </table>
         <pre id="reverb-status"></pre>
       </section>
+      <section id="setup" hidden>
+        <h2>Sources and receivers</h2>
+        <p id="setup-empty">None yet. Put point objects on layers named like "Sources" and "Receivers" (in SketchUp, guide points in groups named so) and re-import, or add them here.</p>
+        <button id="add-source">Add source</button>
+        <button id="add-receiver">Add receiver</button>
+        <table>
+          <thead><tr><th></th><th>Name</th><th>x m</th><th>y m</th><th>z m</th><th>From</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <pre id="setup-status"></pre>
+      </section>
+      <section id="simulate" hidden>
+        <h2>Ray tracing</h2>
+        <label>Rays per source <input id="run-rays" type="number" value="20000" step="10000" min="1000" /></label>
+        <label>Length s <input id="run-length" type="number" value="3" step="0.5" min="0.5" /></label>
+        <label>Receiver radius m <input id="run-radius" type="number" placeholder="auto" step="0.1" min="0" /></label>
+        <button id="run">Run</button>
+        <pre id="run-status"></pre>
+        <table>
+          <thead><tr><th>Receiver</th><th>EDT s</th><th>T30 s</th><th>C80 dB</th><th>D50</th><th>Ts ms</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <table>
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </section>
       <pre id="out"></pre>
     </main>
     <script type="module" src="/src/main.ts"></script>

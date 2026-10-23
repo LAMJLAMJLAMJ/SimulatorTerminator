@@ -3,7 +3,7 @@
 // RawScene. Importers only read and report; welding beyond exact duplicates,
 // orientation and leak checks are the engine's job.
 import earcut from 'earcut';
-import type { RawGroup, RawScene } from './types';
+import type { RawGroup, RawPoint, RawScene } from './types';
 
 export type Vec3 = [number, number, number];
 /** Row-major 4x4. */
@@ -64,6 +64,16 @@ export function triangulatePolygon(outer: Vec3[], holes: Vec3[][], normal: Vec3)
   return out;
 }
 
+/**
+ * Whether points on this layer (or in this group) are sources or receivers, from its name:
+ * "Sources", "Speakers", "Receivers", "Listeners", "Seats", "Mics".
+ */
+export function pointRole(layerPath: string): RawPoint['role'] | null {
+  if (/source|speaker|talker|loudspeaker/i.test(layerPath)) return 'source';
+  if (/receiver|listener|seat|mic(rophone)?s?\b|position/i.test(layerPath)) return 'receiver';
+  return null;
+}
+
 /** Counts skipped objects per (object, reason) so a model with thousands of hidden faces stays readable. */
 export class SkipList {
   private counts = new Map<string, { object: string; reason: string; n: number }>();
@@ -108,10 +118,22 @@ const CURVED = 1;
  * centre, exact duplicate vertices shared.
  */
 export class SceneBuilder {
+  private points: { id: string; role: RawPoint['role']; p: Vec3 }[] = [];
   private corners = new F64();
   private triGroup: number[] = [];
   private triFlags: number[] = [];
   private groups = new Map<string, { index: number; materials: Set<string> }>();
+
+  pointCount(role: RawPoint['role']) {
+    return this.points.filter((q) => q.role === role).length;
+  }
+
+  /** A source or receiver point, world space, source units. Repeated names get a number. */
+  addPoint(name: string, role: RawPoint['role'], p: Vec3) {
+    let id = name;
+    for (let k = 2; this.points.some((q) => q.role === role && q.id === id); k++) id = `${name} ${k}`;
+    this.points.push({ id, role, p });
+  }
 
   /** `tris` holds 9 numbers per triangle. */
   add(layerPath: string, material: string | null | undefined, curved: boolean, tris: ArrayLike<number>) {
@@ -220,6 +242,7 @@ export class SceneBuilder {
       triangles: new Uint32Array(triangles),
       triGroup: new Uint16Array(triGroup),
       triFlags: new Uint8Array(triFlags),
+      points: this.points.map(({ id, role, p }) => ({ id, role, position: [p[0] - c[0], p[1] - c[1], p[2] - c[2]] })),
       warnings,
       skipped: skipped.list(),
     };

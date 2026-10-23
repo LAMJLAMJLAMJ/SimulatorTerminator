@@ -2,8 +2,15 @@
 import type { AirConditions } from "./AirConditions";
 import type { BandSet } from "./BandSet";
 import type { Material } from "./Material";
+import type { ModelPoint } from "./ModelPoint";
 import type { RunRequest } from "./RunRequest";
 import type { SceneMeta } from "./SceneMeta";
+import type { Setup } from "./Setup";
 import type { UpAxis } from "./UpAxis";
 
-export type Command = { "type": "capabilities" } | { "type": "new_project", bands: BandSet, } | { "type": "open_project" } | { "type": "save_project" } | { "type": "get_project" } | { "type": "set_materials", materials: Array<Material>, } | { "type": "assign_materials", assignments: { [key in string]: string | null }, } | { "type": "set_scene", meta: SceneMeta, unit_scale_to_metres: number, up_axis: UpAxis, } | { "type": "reverberation", air: AirConditions, } | { "type": "estimate", run: RunRequest, } | { "type": "run", run: RunRequest, };
+export type Command = { "type": "capabilities" } | { "type": "new_project", bands: BandSet, } | { "type": "open_project" } | { "type": "save_project" } | { "type": "get_project" } | { "type": "set_materials", materials: Array<Material>, } | { "type": "assign_materials", assignments: { [key in string]: string | null }, } | { "type": "set_scene", meta: SceneMeta, unit_scale_to_metres: number, up_axis: UpAxis, 
+/**
+ * Source and receiver points found in the model. They replace the model points of the
+ * previous scene; points added in the app are kept.
+ */
+points: Array<ModelPoint>, } | { "type": "set_setup", setup: Setup, } | { "type": "reverberation", air: AirConditions, } | { "type": "estimate", run: RunRequest, } | { "type": "run", run: RunRequest, };

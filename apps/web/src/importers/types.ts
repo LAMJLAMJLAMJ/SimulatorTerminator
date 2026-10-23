@@ -37,6 +37,14 @@ export interface RawScene {
   triGroup: Uint16Array;
   /** Bit 0 = from a curved or smoothed source face. */
   triFlags?: Uint8Array;
+  /** Point objects on source and receiver layers, relative to origin, in source units. */
+  points: RawPoint[];
   warnings: string[];
   skipped: { object: string; reason: string }[];
+}
+
+export interface RawPoint {
+  id: string;
+  role: 'source' | 'receiver';
+  position: [number, number, number];
 }
