@@ -1,6 +1,7 @@
 import { createConnector } from './engine/connector';
 import { importExtensions, importModel } from './importers';
 import { testRoom } from './importers/test-room';
+import { MaterialsPanel } from './materials/panel';
 
 const engine = createConnector();
 const out = document.querySelector<HTMLPreElement>('#out')!;
@@ -8,6 +9,7 @@ const caps = document.querySelector<HTMLParagraphElement>('#caps')!;
 const testButton = document.querySelector<HTMLButtonElement>('#test-room')!;
 const saveButton = document.querySelector<HTMLButtonElement>('#save')!;
 const modelInput = document.querySelector<HTMLInputElement>('#model')!;
+const materials = new MaterialsPanel(engine, document.querySelector<HTMLElement>('#materials')!);
 let projectName = 'test-room';
 
 const show = (x: unknown) => (out.textContent = JSON.stringify(x, null, 2));
@@ -31,6 +33,8 @@ modelInput.accept = importExtensions.join(',');
 modelInput.onchange = async () => {
   const file = modelInput.files?.[0];
   if (!file) return;
+  // Clear the picker so choosing the same file again, after editing it, imports it again.
+  modelInput.value = '';
   out.textContent = `Reading ${file.name}…`;
   try {
     const t0 = performance.now();
@@ -48,6 +52,7 @@ modelInput.onchange = async () => {
     });
     projectName = file.name.replace(/\.[^.]+$/, '');
     saveButton.disabled = false;
+    await materials.show();
   } catch (e) {
     out.textContent = `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`;
   }

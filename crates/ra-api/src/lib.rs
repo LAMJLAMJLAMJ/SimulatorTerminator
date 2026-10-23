@@ -5,7 +5,9 @@
 //! `cargo test -p ra-api --features ts` regenerates the TypeScript protocol in
 //! `apps/web/src/engine/protocol/`.
 
-use ra_core::{BandSet, SceneArrays, SceneMeta};
+use std::collections::BTreeMap;
+
+use ra_core::{BandSet, Material, SceneArrays, SceneMeta};
 use ra_engine::{Estimate, PreparedScene, RunRequest, Solver};
 use ra_geom::ImportReport;
 use ra_project::{Project, Scene, SceneDoc};
@@ -23,9 +25,23 @@ pub enum Command {
     OpenProject,
     /// Replies with bufs[0] = the `.raproj` bytes.
     SaveProject,
+    /// Replies with the project: manifest, scene and material library.
+    GetProject,
+    /// Replaces the project's acoustic material library. Layers assigned a material that is
+    /// no longer in it become unassigned. Replies with the project.
+    SetMaterials {
+        materials: Vec<Material>,
+    },
+    /// Assigns acoustic materials by group key (the layer path); `null` unassigns. Groups not
+    /// named keep their material. Replies with the project.
+    AssignMaterials {
+        assignments: BTreeMap<String, Option<String>>,
+    },
     /// bufs = vertices (f32 × 3), triangles (u32 × 3), tri_group (u16), then optionally
     /// tri_flags (u8); an empty buffer skips it.
     /// Vertices are in source units and axes; the engine converts them to metres, Z up.
+    /// A group with no acoustic material keeps the one its key had in the previous scene, so
+    /// re-importing an edited model keeps the layer mapping.
     SetScene {
         meta: SceneMeta,
         #[serde(default = "one")]
@@ -64,7 +80,7 @@ pub enum Event {
     Ok,
     Error { message: String },
     Capabilities(Capabilities),
-    Project { manifest: ra_project::Manifest, scene: Option<Box<SceneDoc>> },
+    Project { manifest: ra_project::Manifest, scene: Option<Box<SceneDoc>>, materials: Vec<Material> },
     SceneReport { report: ImportReport },
     Estimate { estimate: Estimate },
     Progress { done: u32, total: u32 },
@@ -165,6 +181,15 @@ impl Engine {
                 self.project_event().into()
             }
             Command::SaveProject => Reply { event: Event::Ok, bufs: vec![ra_project::write(&self.project)?] },
+            Command::GetProject => self.project_event().into(),
+            Command::SetMaterials { materials } => {
+                self.set_materials(materials)?;
+                self.project_event().into()
+            }
+            Command::AssignMaterials { assignments } => {
+                self.assign_materials(assignments)?;
+                self.project_event().into()
+            }
             Command::SetScene { mut meta, unit_scale_to_metres: k, up_axis } => {
                 bufs.resize(4, Vec::new());
                 // right-handed Y up to right-handed Z up: (x, y, z) -> (x, -z, y)
@@ -190,15 +215,27 @@ impl Engine {
                 };
                 arrays.validate(meta.groups.len()).map_err(EngineError::Invalid)?;
                 let (arrays, report) = ra_geom::prepare(&arrays, meta.groups.len());
+                if let Some(old) = &self.project.scene {
+                    let previous: BTreeMap<&str, &str> = old
+                        .doc
+                        .meta
+                        .groups
+                        .iter()
+                        .filter_map(|g| Some((g.key.as_str(), g.acoustic_material.as_deref()?)))
+                        .collect();
+                    for g in meta.groups.iter_mut().filter(|g| g.acoustic_material.is_none()) {
+                        g.acoustic_material = previous.get(g.key.as_str()).map(|m| m.to_string());
+                    }
+                }
                 self.project.scene = Some(Scene { doc: SceneDoc { meta, report: report.clone() }, arrays });
                 Event::SceneReport { report }.into()
             }
             Command::Estimate { run } => {
-                let (solver, scene) = self.prepare(&run)?;
+                let (solver, scene) = self.prepare(&run, false)?;
                 Event::Estimate { estimate: solver.estimate(&scene, &run) }.into()
             }
             Command::Run { run } => {
-                let (solver, scene) = self.prepare(&run)?;
+                let (solver, scene) = self.prepare(&run, true)?;
                 let plan = solver.plan(&scene, &run);
                 let total = plan.len() as u32;
                 let mut parts = Vec::with_capacity(plan.len());
@@ -216,10 +253,70 @@ impl Engine {
         Event::Project {
             manifest: self.project.manifest.clone(),
             scene: self.project.scene.as_ref().map(|s| Box::new(s.doc.clone())),
+            materials: self.project.materials.clone(),
         }
     }
 
-    fn prepare(&self, run: &RunRequest) -> Result<(&dyn Solver, PreparedScene), EngineError> {
+    fn set_materials(&mut self, materials: Vec<Material>) -> Result<(), EngineError> {
+        let bands = self.project.manifest.bands.len();
+        let mut names = std::collections::BTreeSet::new();
+        for m in &materials {
+            if !names.insert(m.name.as_str()) {
+                return Err(EngineError::Invalid(format!("two materials are called {:?}", m.name)));
+            }
+            for (what, values) in [("absorption", &m.absorption), ("scattering", &m.scattering)] {
+                if values.len() != bands {
+                    return Err(EngineError::Invalid(format!(
+                        "{:?} has {} {what} values for {bands} bands",
+                        m.name,
+                        values.len()
+                    )));
+                }
+                if values.iter().any(|v| !(0.0..=1.0).contains(v)) {
+                    return Err(EngineError::Invalid(format!("{:?} has {what} outside 0 to 1", m.name)));
+                }
+            }
+        }
+        if let Some(scene) = &mut self.project.scene {
+            for g in &mut scene.doc.meta.groups {
+                if g.acoustic_material.as_deref().is_some_and(|m| !names.contains(m)) {
+                    g.acoustic_material = None;
+                }
+            }
+        }
+        self.project.materials = materials;
+        Ok(())
+    }
+
+    fn assign_materials(&mut self, assignments: BTreeMap<String, Option<String>>) -> Result<(), EngineError> {
+        let library = &self.project.materials;
+        let scene =
+            self.project.scene.as_mut().ok_or_else(|| EngineError::Invalid("no scene loaded".into()))?;
+        // Check everything first, so a bad entry changes nothing.
+        for (key, material) in &assignments {
+            if !scene.doc.meta.groups.iter().any(|g| &g.key == key) {
+                return Err(EngineError::Invalid(format!("no layer {key:?} in the scene")));
+            }
+            if let Some(m) = material
+                && !library.iter().any(|l| &l.name == m)
+            {
+                return Err(EngineError::Invalid(format!("no material {m:?} in the library")));
+            }
+        }
+        for g in &mut scene.doc.meta.groups {
+            if let Some(m) = assignments.get(&g.key) {
+                g.acoustic_material = m.clone();
+            }
+        }
+        Ok(())
+    }
+
+    /// `need_materials`: every layer must have an acoustic material, as a run needs them.
+    fn prepare(
+        &self,
+        run: &RunRequest,
+        need_materials: bool,
+    ) -> Result<(&dyn Solver, PreparedScene), EngineError> {
         let solver = self
             .solvers
             .iter()
@@ -227,11 +324,28 @@ impl Engine {
             .ok_or_else(|| EngineError::Invalid(format!("no solver {:?} in this build", run.solver)))?;
         let scene =
             self.project.scene.as_ref().ok_or_else(|| EngineError::Invalid("no scene loaded".into()))?;
-        // Materials and speakers are wired in with the material-assignment and speaker work.
+        let mut materials = Vec::new();
+        if need_materials {
+            let mut missing = Vec::new();
+            for g in &scene.doc.meta.groups {
+                match g
+                    .acoustic_material
+                    .as_ref()
+                    .and_then(|m| self.project.materials.iter().find(|l| &l.name == m))
+                {
+                    Some(m) => materials.push(m.clone()),
+                    None => missing.push(g.layer_path.as_str()),
+                }
+            }
+            if !missing.is_empty() {
+                return Err(EngineError::Invalid(format!("no acoustic material for {}", missing.join(", "))));
+            }
+        }
+        // Speakers are wired in with the speaker work.
         let prepared = PreparedScene {
             meta: scene.doc.meta.clone(),
             arrays: scene.arrays.clone(),
-            materials: Vec::new(),
+            materials,
             speakers: Vec::new(),
         };
         Ok((solver.as_ref(), prepared))
@@ -352,10 +466,103 @@ mod tests {
         }
     }
 
+    fn material(name: &str) -> Material {
+        Material {
+            name: name.into(),
+            absorption: vec![0.1; 8],
+            scattering: vec![0.1; 8],
+            source: "test".into(),
+        }
+    }
+
+    fn groups(e: &Engine) -> Vec<(String, Option<String>)> {
+        let scene = e.project.scene.as_ref().unwrap();
+        scene.doc.meta.groups.iter().map(|g| (g.key.clone(), g.acoustic_material.clone())).collect()
+    }
+
+    fn assign(e: &mut Engine, key: &str, m: Option<&str>) -> Event {
+        let assignments = BTreeMap::from([(key.to_string(), m.map(String::from))]);
+        e.handle(Command::AssignMaterials { assignments }, vec![], &mut |_| {}).event
+    }
+
+    fn with_materials(e: &mut Engine) {
+        set_scene(e);
+        let materials = vec![material("Plaster"), material("Carpet")];
+        let ev = e.handle(Command::SetMaterials { materials }, vec![], &mut |_| {}).event;
+        assert!(matches!(ev, Event::Project { .. }), "{ev:?}");
+        assert!(matches!(assign(e, "Room", Some("Plaster")), Event::Project { .. }));
+    }
+
+    #[test]
+    fn mapping_is_saved_with_the_project() {
+        let mut e = Engine::new();
+        with_materials(&mut e);
+        let saved = e.handle(Command::SaveProject, vec![], &mut |_| {});
+        let mut other = Engine::new();
+        match other.handle(Command::OpenProject, saved.bufs, &mut |_| {}).event {
+            Event::Project { scene: Some(doc), materials, .. } => {
+                assert_eq!(doc.meta.groups[0].acoustic_material.as_deref(), Some("Plaster"));
+                assert_eq!(materials.len(), 2);
+            }
+            ev => panic!("{ev:?}"),
+        }
+    }
+
+    #[test]
+    fn reimporting_keeps_the_mapping() {
+        let mut e = Engine::new();
+        with_materials(&mut e);
+        set_scene(&mut e);
+        assert_eq!(groups(&e), vec![("Room".into(), Some("Plaster".into()))]);
+    }
+
+    #[test]
+    fn bad_assignments_change_nothing() {
+        let mut e = Engine::new();
+        with_materials(&mut e);
+        let assignments =
+            BTreeMap::from([("Room".to_string(), None), ("Balcony".to_string(), Some("Carpet".into()))]);
+        let ev = e.handle(Command::AssignMaterials { assignments }, vec![], &mut |_| {}).event;
+        assert!(matches!(ev, Event::Error { ref message } if message.contains("Balcony")), "{ev:?}");
+        assert!(matches!(assign(&mut e, "Room", Some("Velvet")), Event::Error { .. }));
+        assert_eq!(groups(&e), vec![("Room".into(), Some("Plaster".into()))]);
+    }
+
+    #[test]
+    fn library_is_checked_and_removed_materials_are_unassigned() {
+        let mut e = Engine::new();
+        with_materials(&mut e);
+        let mut short = material("Glass");
+        short.absorption.pop();
+        let ev = e.handle(Command::SetMaterials { materials: vec![short] }, vec![], &mut |_| {}).event;
+        assert!(
+            matches!(ev, Event::Error { ref message } if message.contains("7 absorption values")),
+            "{ev:?}"
+        );
+        let ev = e
+            .handle(Command::SetMaterials { materials: vec![material("Carpet")] }, vec![], &mut |_| {})
+            .event;
+        assert!(matches!(ev, Event::Project { .. }));
+        assert_eq!(groups(&e), vec![("Room".into(), None)]);
+    }
+
+    #[test]
+    fn a_run_needs_every_layer_mapped() {
+        let mut e = Engine::new();
+        set_scene(&mut e);
+        let ev = e.handle(Command::Run { run: run() }, vec![], &mut |_| {}).event;
+        assert!(
+            matches!(ev, Event::Error { ref message } if message == "no acoustic material for Room"),
+            "{ev:?}"
+        );
+        let ev = e.handle(Command::Estimate { run: run() }, vec![], &mut |_| {}).event;
+        assert!(matches!(ev, Event::Estimate { .. }), "{ev:?}");
+    }
+
     #[test]
     fn run_reports_progress_per_chunk() {
         let mut e = Engine::new();
-        set_scene(&mut e);
+        with_materials(&mut e);
         let mut seen = Vec::new();
         let reply = e.handle(Command::Run { run: run() }, vec![], &mut |ev| seen.push(ev));
         assert_eq!(reply.event, Event::RunDone { chunks: 3, receivers: 1 });
