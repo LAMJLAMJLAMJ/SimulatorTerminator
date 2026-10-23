@@ -15,6 +15,11 @@ export function testRoom(x = 20000, y = 30000, z = 12000): RawScene {
     vertices,
     triangles,
     triGroup: new Uint16Array(12),
+    points: [
+      { id: 'Stage', role: 'source', position: [x / 2, 4000, 1500] },
+      { id: 'Stalls', role: 'receiver', position: [x / 2, 15000, 1200] },
+      { id: 'Back', role: 'receiver', position: [x / 4, 26000, 1200] },
+    ],
     warnings: [],
     skipped: [],
   };

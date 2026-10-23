@@ -1,7 +1,7 @@
 // SketchUp (.skp) importer on OpenSKP, which reads legacy and 2021+ files in
 // the browser. Coordinates stay in inches; groups are SketchUp tags.
 import { parseSkp, type Definition } from 'openskp';
-import { SceneBuilder, SkipList, identity, mirrors, mul4, transform, triangulatePolygon, type Mat4, type Vec3 } from './geometry';
+import { SceneBuilder, SkipList, identity, mirrors, mul4, pointRole, transform, triangulatePolygon, type Mat4, type Vec3 } from './geometry';
 import type { GeometryImporter, ImportOptions, RawScene } from './types';
 
 const INCH = 0.0254;
@@ -71,6 +71,15 @@ export function importSkp(buffer: ArrayBuffer, opts: ImportOptions = {}): RawSce
       }
       // A face left on the default material takes the paint of the group or component around it.
       scene.add(layer, matName(face.materialId) ?? ctx.material, curved, world);
+    }
+    // Guide points inside a group or component tagged or named like "Sources" or
+    // "Receivers" place them (openskp does not give a guide point its own tag).
+    const role = pointRole(layer) ?? pointRole(ctx.path.join(' / '));
+    if (role && !(skipHidden && (ctx.hidden || hiddenTags.has(layer)))) {
+      for (const cp of def.constructionPoints) {
+        const n = scene.pointCount(role) + 1;
+        scene.addPoint(`${role === 'source' ? 'S' : 'R'}${n}`, role, transform(M, cp.position));
+      }
     }
     for (const inst of def.instances) {
       const child = model.definitions.get(inst.refIdx);

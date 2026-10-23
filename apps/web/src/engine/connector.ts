@@ -9,7 +9,9 @@ import type { Manifest } from './protocol/Manifest';
 import type { Material } from './protocol/Material';
 import type { ReverberationReport } from './protocol/ReverberationReport';
 import type { RunRequest } from './protocol/RunRequest';
+import type { RunResults } from './protocol/RunResults';
 import type { SceneDoc } from './protocol/SceneDoc';
+import type { Setup } from './protocol/Setup';
 import type { RawScene } from '../importers/types';
 import type { Transport } from './transport';
 import { TauriTransport, inTauri } from './tauri-transport';
@@ -19,6 +21,7 @@ export interface ProjectInfo {
   manifest: Manifest;
   scene: SceneDoc | null;
   materials: Material[];
+  setup: Setup;
 }
 
 export interface Progress {
@@ -58,6 +61,11 @@ export class EngineConnector {
     return expect(await this.call({ type: 'assign_materials', assignments }), 'project');
   }
 
+  /** Replaces the sources and receivers. */
+  async setSetup(setup: Setup): Promise<ProjectInfo> {
+    return expect(await this.call({ type: 'set_setup', setup }), 'project');
+  }
+
   async saveProject(): Promise<Blob> {
     const reply = await this.transport.send({ type: 'save_project' });
     expect(reply.event, 'ok');
@@ -86,6 +94,7 @@ export class EngineConnector {
       },
       unit_scale_to_metres: raw.unitScaleToMetres,
       up_axis: raw.upAxis,
+      points: raw.points,
     };
     return expect(await this.call(cmd, bufs), 'scene_report').report;
   }
@@ -99,11 +108,12 @@ export class EngineConnector {
     return expect(await this.call({ type: 'estimate', run }), 'estimate').estimate;
   }
 
-  async run(run: RunRequest, onProgress?: (p: Progress) => void): Promise<Extract<Event, { type: 'run_done' }>> {
+  /** Runs a solver; an empty receiver list means every receiver. */
+  async run(run: RunRequest, onProgress?: (p: Progress) => void): Promise<RunResults> {
     const reply = await this.transport.send({ type: 'run', run }, [], (e) => {
       if (e.type === 'progress') onProgress?.({ done: e.done, total: e.total });
     });
-    return expect(reply.event, 'run_done');
+    return expect(reply.event, 'run_done').results;
   }
 
   dispose(): void {

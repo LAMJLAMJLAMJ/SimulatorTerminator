@@ -9,7 +9,7 @@ pub mod npy;
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
-use ra_core::{BandSet, Material, SceneArrays, SceneMeta};
+use ra_core::{BandSet, Material, SceneArrays, SceneMeta, Setup};
 use ra_geom::ImportReport;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -18,7 +18,7 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
 /// The format version this build writes.
 pub const FORMAT_MAJOR: u32 = 1;
-pub const FORMAT_MINOR: u32 = 1;
+pub const FORMAT_MINOR: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -86,6 +86,8 @@ pub struct Project {
     pub manifest: Manifest,
     pub scene: Option<Scene>,
     pub materials: Vec<Material>,
+    /// Sources and receivers (1.2).
+    pub setup: Setup,
     /// Entries this build doesn't interpret (speakers, setup, runs, originals, or files from a
     /// newer minor version). Written back unchanged.
     pub other: BTreeMap<String, Vec<u8>>,
@@ -93,7 +95,13 @@ pub struct Project {
 
 impl Project {
     pub fn new(bands: BandSet) -> Self {
-        Project { manifest: Manifest::new(bands), scene: None, materials: Vec::new(), other: BTreeMap::new() }
+        Project {
+            manifest: Manifest::new(bands),
+            scene: None,
+            materials: Vec::new(),
+            setup: Setup::default(),
+            other: BTreeMap::new(),
+        }
     }
 }
 
@@ -104,6 +112,7 @@ const TRIANGLES: &str = "scene/triangles.npy";
 const TRI_GROUP: &str = "scene/tri_group.npy";
 const TRI_FLAGS: &str = "scene/tri_flags.npy";
 const MATERIALS: &str = "materials/library.json";
+const SETUP: &str = "setup/points.json";
 
 /// Writes a project. The output is byte-for-byte reproducible: entries are sorted and
 /// timestamps fixed, so the browser and native builds write identical files.
@@ -138,6 +147,12 @@ pub fn write(project: &Project) -> Result<Vec<u8>, ProjectError> {
     let materials = json(&project.materials)?;
     manifest.hashes.insert("materials".into(), hex(&Sha256::digest(&materials)));
     entries.insert(MATERIALS.into(), materials);
+    // Only when there is a setup, so projects without one are written as before.
+    if !project.setup.is_empty() {
+        let setup = json(&project.setup)?;
+        manifest.hashes.insert("setup".into(), hex(&Sha256::digest(&setup)));
+        entries.insert(SETUP.into(), setup);
+    }
     entries.insert(MANIFEST.into(), json(&manifest)?);
 
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
@@ -183,6 +198,7 @@ pub fn read(bytes: &[u8]) -> Result<Project, ProjectError> {
     // Migrations from older majors go here once there is a 2.0.
 
     let materials = parse(&mut entries, MATERIALS)?.unwrap_or_default();
+    let setup = parse(&mut entries, SETUP)?.unwrap_or_default();
     let scene = match parse::<SceneDoc>(&mut entries, SCENE)? {
         None => None,
         Some(doc) => {
@@ -201,7 +217,7 @@ pub fn read(bytes: &[u8]) -> Result<Project, ProjectError> {
         }
     };
 
-    Ok(Project { manifest, scene, materials, other: entries })
+    Ok(Project { manifest, scene, materials, setup, other: entries })
 }
 
 fn json<T: Serialize>(value: &T) -> Result<Vec<u8>, ProjectError> {
@@ -263,7 +279,13 @@ mod tests {
             scattering: vec![0.05; 8],
             source: "test".into(),
         });
-        p.other.insert("setup/sources.json".into(), b"[]".to_vec());
+        p.setup.sources.push(ra_core::Point { id: "S1".into(), position: [2.0, 3.0, 1.5], from_model: true });
+        p.setup.receivers.push(ra_core::Point {
+            id: "R1".into(),
+            position: [10.0, 20.0, 1.2],
+            from_model: false,
+        });
+        p.other.insert("runs/r1/summary.json".into(), b"{}".to_vec());
         p
     }
 
@@ -274,7 +296,9 @@ mod tests {
         let back = read(&bytes).unwrap();
         assert_eq!(back.scene, p.scene);
         assert_eq!(back.materials, p.materials);
+        assert_eq!(back.setup, p.setup);
         assert_eq!(back.other, p.other);
+        assert!(back.manifest.hashes.contains_key("setup"));
         assert!(back.manifest.hashes.contains_key("scene"));
     }
 
@@ -329,11 +353,13 @@ mod tests {
 mod format_samples {
     #[test]
     fn browser_sample_round_trips_byte_for_byte() {
-        let browser = include_bytes!("../../../validation/formats/1.1-test-room.raproj");
+        let browser = include_bytes!("../../../validation/formats/1.2-test-room.raproj");
         let project = crate::read(browser).unwrap();
         let report = &project.scene.as_ref().unwrap().doc.report;
         assert_eq!(report.enclosed_volume_m3, Some(7200.0));
         assert_eq!(report.room_volume_m3, Some(7200.0));
+        assert_eq!(project.setup.sources.len(), 1);
+        assert_eq!(project.setup.receivers.len(), 2);
         assert_eq!(crate::write(&project).unwrap(), browser.to_vec());
     }
 
@@ -345,5 +371,11 @@ mod format_samples {
         assert_eq!(report.enclosed_volume_m3, Some(7200.0));
         // Fields added in 1.1 take their defaults.
         assert_eq!(report.leak, None);
+
+        let project =
+            crate::read(include_bytes!("../../../validation/formats/1.1-test-room.raproj")).unwrap();
+        assert!(project.scene.unwrap().doc.report.leak.is_some());
+        // No setup before 1.2.
+        assert!(project.setup.is_empty());
     }
 }

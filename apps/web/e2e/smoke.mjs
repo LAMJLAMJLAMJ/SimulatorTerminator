@@ -52,4 +52,24 @@ await page.waitForFunction(() => document.querySelector('#library-status').textC
 const names = await page.$$eval('select[data-key="Floor carpet"] option', (os) => os.map((o) => o.value));
 if (!names.includes('Plaster on brick')) throw new Error(`library import missing: ${names}`);
 console.log('material library imported from CSV');
+
+// Every layer needs a material to trace: give the ones without a suggestion plaster from the CSV.
+for (const key of await page.$$eval('#materials select[data-key]', (ss) => ss.filter((s) => !s.value).map((s) => s.dataset.key))) {
+  await page.selectOption(`select[data-key="${key}"]`, 'Plaster on brick');
+}
+
+// A source and a receiver added in the app, then a short ray-tracing run.
+for (const id of ['#add-source', '#add-receiver']) {
+  const rows = await page.$$eval('#setup tbody tr', (r) => r.length);
+  await page.click(id);
+  await page.waitForFunction((n) => document.querySelectorAll('#setup tbody tr').length === n + 1, rows);
+}
+await page.fill('#run-rays', '3000');
+await page.fill('#run-length', '2');
+await page.click('#run');
+await page.waitForFunction(() => /^(Traced|Could)/.test(document.querySelector('#run-status').textContent), null, { timeout: 120000 });
+const status = await page.textContent('#run-status');
+const t30 = await page.$$eval('#simulate table:first-of-type tbody tr', (rows) => rows.map((r) => r.children[2].textContent));
+if (!status.startsWith('Traced') || !t30.every((t) => Number(t) > 0.2 && Number(t) < 10)) throw new Error(`ray tracing: ${status} ${t30}`);
+console.log('ray traced, T30 mid', t30.join(' '), '|', status.split('\n')[0]);
 await browser.close();

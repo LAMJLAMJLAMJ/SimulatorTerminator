@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use ra_core::{AirConditions, BandSet, Material, SceneArrays, SceneMeta, TRI_FLAG_CONTACT};
+use ra_core::{AirConditions, BandSet, Material, Point, SceneArrays, SceneMeta, Setup, TRI_FLAG_CONTACT};
 use ra_engine::{Estimate, PreparedScene, RunRequest, Solver};
 use ra_geom::ImportReport;
 use ra_project::{Project, Scene, SceneDoc};
@@ -48,6 +48,14 @@ pub enum Command {
         unit_scale_to_metres: f64,
         #[serde(default)]
         up_axis: UpAxis,
+        /// Source and receiver points found in the model. They replace the model points of the
+        /// previous scene; points added in the app are kept.
+        #[serde(default)]
+        points: Vec<ModelPoint>,
+    },
+    /// Replaces the sources and receivers. Replies with the project.
+    SetSetup {
+        setup: Setup,
     },
     /// Sabine and Eyring reverberation times of the loaded scene from its volume, the area
     /// of each layer that faces the room and the layers' materials.
@@ -63,6 +71,23 @@ pub enum Command {
     Run {
         run: RunRequest,
     },
+}
+
+/// A point object read from the model, in source units and axes, relative to the scene origin.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ModelPoint {
+    pub id: String,
+    pub role: PointRole,
+    pub position: [f64; 3],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum PointRole {
+    Source,
+    Receiver,
 }
 
 /// Up axis of the source model. Rhino and SketchUp are Z up; glTF and OBJ are usually Y up.
@@ -84,14 +109,61 @@ fn one() -> f64 {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     Ok,
-    Error { message: String },
+    Error {
+        message: String,
+    },
     Capabilities(Capabilities),
-    Project { manifest: ra_project::Manifest, scene: Option<Box<SceneDoc>>, materials: Vec<Material> },
-    SceneReport { report: ImportReport },
-    Reverberation { report: ReverberationReport },
-    Estimate { estimate: Estimate },
-    Progress { done: u32, total: u32 },
-    RunDone { chunks: u32, receivers: u32 },
+    Project {
+        manifest: ra_project::Manifest,
+        scene: Option<Box<SceneDoc>>,
+        materials: Vec<Material>,
+        setup: Setup,
+    },
+    SceneReport {
+        report: ImportReport,
+    },
+    Reverberation {
+        report: ReverberationReport,
+    },
+    Estimate {
+        estimate: Estimate,
+    },
+    Progress {
+        done: u32,
+        total: u32,
+    },
+    RunDone {
+        chunks: u32,
+        results: RunResults,
+    },
+}
+
+/// ISO 3382-1 parameters per receiver, from the run's energy histograms.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct RunResults {
+    pub bands_hz: Vec<f32>,
+    /// The receiver radius used, m.
+    pub receiver_radius_m: f64,
+    /// Mean distance between reflections, m.
+    pub mean_free_path_m: f32,
+    /// Share of rays that left the model through a gap.
+    pub leak_fraction: f32,
+    pub receivers: Vec<ReceiverResult>,
+}
+
+/// One value per band; `null` where the decay is too short or noisy to evaluate.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ReceiverResult {
+    pub id: String,
+    pub edt_s: Vec<Option<f32>>,
+    pub t20_s: Vec<Option<f32>>,
+    pub t30_s: Vec<Option<f32>>,
+    pub c50_db: Vec<Option<f32>>,
+    pub c80_db: Vec<Option<f32>>,
+    pub d50: Vec<Option<f32>>,
+    pub ts_s: Vec<Option<f32>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -224,11 +296,32 @@ impl Engine {
                 self.set_materials(materials)?;
                 self.project_event().into()
             }
+            Command::SetSetup { setup } => {
+                for (what, points) in [("source", &setup.sources), ("receiver", &setup.receivers)] {
+                    let mut ids = std::collections::BTreeSet::new();
+                    for p in points {
+                        if p.id.trim().is_empty() || !ids.insert(p.id.as_str()) {
+                            return Err(EngineError::Invalid(format!(
+                                "{what} names must be unique and not empty: {:?}",
+                                p.id
+                            )));
+                        }
+                        if !p.position.iter().all(|c| c.is_finite()) {
+                            return Err(EngineError::Invalid(format!(
+                                "{what} {:?} has no valid position",
+                                p.id
+                            )));
+                        }
+                    }
+                }
+                self.project.setup = setup;
+                self.project_event().into()
+            }
             Command::AssignMaterials { assignments } => {
                 self.assign_materials(assignments)?;
                 self.project_event().into()
             }
-            Command::SetScene { mut meta, unit_scale_to_metres: k, up_axis } => {
+            Command::SetScene { mut meta, unit_scale_to_metres: k, up_axis, points } => {
                 bufs.resize(4, Vec::new());
                 // right-handed Y up to right-handed Z up: (x, y, z) -> (x, -z, y)
                 let to_z_up = |[x, y, z]: [f32; 3]| match up_axis {
@@ -266,6 +359,21 @@ impl Engine {
                     }
                 }
                 self.project.scene = Some(Scene { doc: SceneDoc { meta, report: report.clone() }, arrays });
+                let setup = &mut self.project.setup;
+                setup.sources.retain(|p| !p.from_model);
+                setup.receivers.retain(|p| !p.from_model);
+                for p in points {
+                    let [x, y, z] = p.position.map(|c| c * k);
+                    let position = match up_axis {
+                        UpAxis::Z => [x, y, z],
+                        UpAxis::Y => [x, -z, y],
+                    };
+                    let point = Point { id: p.id, position, from_model: true };
+                    match p.role {
+                        PointRole::Source => setup.sources.push(point),
+                        PointRole::Receiver => setup.receivers.push(point),
+                    }
+                }
                 Event::SceneReport { report }.into()
             }
             Command::Reverberation { air } => {
@@ -275,8 +383,32 @@ impl Engine {
                 let (solver, scene) = self.prepare(&run, false)?;
                 Event::Estimate { estimate: solver.estimate(&scene, &run) }.into()
             }
-            Command::Run { run } => {
+            Command::Run { mut run } => {
+                if run.receivers.is_empty() {
+                    run.receivers = self.project.setup.receivers.iter().map(|r| r.id.clone()).collect();
+                }
+                if run.receiver_radius_m <= 0.0 {
+                    let volume = self.project.scene.as_ref().and_then(|s| {
+                        let r = &s.doc.report;
+                        r.enclosed_volume_m3
+                            .or(r.leak.as_ref().and_then(|l| l.air_volume_m3))
+                            .or(r.room_volume_m3)
+                    });
+                    run.receiver_radius_m = volume.map_or(0.5, |v| {
+                        ra_engine::auto_receiver_radius(v, run.n_rays, run.air.speed_of_sound())
+                    });
+                }
                 let (solver, scene) = self.prepare(&run, true)?;
+                if scene.sources.is_empty() || run.receivers.is_empty() {
+                    return Err(EngineError::Invalid(
+                        "a run needs at least one source and one receiver".into(),
+                    ));
+                }
+                if let Some(id) =
+                    run.receivers.iter().find(|id| !scene.receivers.iter().any(|r| &r.id == *id))
+                {
+                    return Err(EngineError::Invalid(format!("no receiver {id:?}")));
+                }
                 let plan = solver.plan(&scene, &run);
                 let total = plan.len() as u32;
                 let mut parts = Vec::with_capacity(plan.len());
@@ -285,7 +417,32 @@ impl Engine {
                     progress(Event::Progress { done: chunk.index + 1, total });
                 }
                 let out = solver.merge(&run, parts);
-                Event::RunDone { chunks: total, receivers: out.receivers.len() as u32 }.into()
+                let receivers = out
+                    .receivers
+                    .iter()
+                    .map(|e| {
+                        let m = ra_metrics::from_energy(e, 1.0 / e.bin_s, &ra_metrics::Options::default())
+                            .unwrap_or_default();
+                        ReceiverResult {
+                            id: e.receiver.clone(),
+                            edt_s: m.edt_s,
+                            t20_s: m.t20_s,
+                            t30_s: m.t30_s,
+                            c50_db: m.c50_db,
+                            c80_db: m.c80_db,
+                            d50: m.d50,
+                            ts_s: m.ts_s,
+                        }
+                    })
+                    .collect();
+                let results = RunResults {
+                    bands_hz: run.bands.centres_hz().to_vec(),
+                    receiver_radius_m: run.receiver_radius_m,
+                    mean_free_path_m: out.mean_free_path_m,
+                    leak_fraction: out.leak_fraction,
+                    receivers,
+                };
+                Event::RunDone { chunks: total, results }.into()
             }
         })
     }
@@ -295,6 +452,7 @@ impl Engine {
             manifest: self.project.manifest.clone(),
             scene: self.project.scene.as_ref().map(|s| Box::new(s.doc.clone())),
             materials: self.project.materials.clone(),
+            setup: self.project.setup.clone(),
         }
     }
 
@@ -495,12 +653,13 @@ impl Engine {
             }
         }
         // Speakers are wired in with the speaker work.
-        let prepared = PreparedScene {
-            meta: scene.doc.meta.clone(),
-            arrays: scene.arrays.clone(),
+        let prepared = PreparedScene::new(
+            scene.doc.meta.clone(),
+            scene.arrays.clone(),
             materials,
-            speakers: Vec::new(),
-        };
+            self.project.setup.sources.clone(),
+            self.project.setup.receivers.clone(),
+        );
         Ok((solver.as_ref(), prepared))
     }
 }
@@ -562,7 +721,15 @@ mod tests {
             s.tri_group.iter().flat_map(|g| g.to_le_bytes()).collect(),
         ];
         engine.handle(
-            Command::SetScene { meta, unit_scale_to_metres: 1.0, up_axis: UpAxis::Z },
+            Command::SetScene {
+                meta,
+                unit_scale_to_metres: 1.0,
+                up_axis: UpAxis::Z,
+                points: vec![
+                    ModelPoint { id: "S1".into(), role: PointRole::Source, position: [1.5, 2.0, 1.5] },
+                    ModelPoint { id: "R1".into(), role: PointRole::Receiver, position: [4.5, 6.0, 1.2] },
+                ],
+            },
             bufs,
             &mut |_| {},
         )
@@ -576,6 +743,8 @@ mod tests {
             n_rays: 40_000,
             seed: 1,
             air_absorption_per_m: None,
+            air: AirConditions::default(),
+            receiver_radius_m: 0.5,
             duration_s: 1.0,
             receivers: vec!["R1".into()],
             grids: vec![],
@@ -718,8 +887,72 @@ mod tests {
         with_materials(&mut e);
         let mut seen = Vec::new();
         let reply = e.handle(Command::Run { run: run() }, vec![], &mut |ev| seen.push(ev));
-        assert_eq!(reply.event, Event::RunDone { chunks: 3, receivers: 1 });
+        let Event::RunDone { chunks, results } = reply.event else { panic!("{:?}", reply.event) };
+        assert_eq!(chunks, 3);
+        assert_eq!(results.receivers.len(), 1);
         assert_eq!(seen.last(), Some(&Event::Progress { done: 3, total: 3 }));
+    }
+
+    fn setup(e: &Engine) -> Setup {
+        let Event::Project { setup, .. } = e.project_event() else { unreachable!() };
+        setup
+    }
+
+    #[test]
+    fn model_points_are_replaced_on_reimport_and_app_points_kept() {
+        let mut e = Engine::new();
+        set_scene(&mut e);
+        let mut s = setup(&e);
+        assert_eq!(s.sources[0], Point { id: "S1".into(), position: [1.5, 2.0, 1.5], from_model: true });
+        s.receivers.push(Point { id: "Seat 12".into(), position: [3.0, 4.0, 1.2], from_model: false });
+        s.receivers[0].position[2] = 1.1;
+        assert!(matches!(
+            e.handle(Command::SetSetup { setup: s }, vec![], &mut |_| {}).event,
+            Event::Project { .. }
+        ));
+        set_scene(&mut e);
+        let s = setup(&e);
+        let ids: Vec<&str> = s.receivers.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["Seat 12", "R1"]);
+        // The model's point wins over the edit, as the model was re-imported.
+        assert_eq!(s.receivers[1].position[2], 1.2);
+    }
+
+    #[test]
+    fn setup_names_must_be_unique() {
+        let mut e = Engine::new();
+        let p = Point { id: "A".into(), position: [0.0; 3], from_model: false };
+        let bad = Setup { sources: vec![p.clone(), p], receivers: vec![] };
+        let ev = e.handle(Command::SetSetup { setup: bad }, vec![], &mut |_| {}).event;
+        assert!(matches!(ev, Event::Error { .. }), "{ev:?}");
+    }
+
+    #[test]
+    fn ray_traced_box_has_plausible_parameters() {
+        let mut e = Engine::new();
+        set_scene(&mut e);
+        let m = Material {
+            name: "Ten".into(),
+            absorption: vec![0.1; 8],
+            scattering: vec![0.3; 8],
+            source: String::new(),
+        };
+        e.handle(Command::SetMaterials { materials: vec![m] }, vec![], &mut |_| {});
+        assign(&mut e, "Room", Some("Ten"));
+        let mut r = run();
+        r.solver = "rt".into();
+        r.n_rays = 4000;
+        r.duration_s = 2.5;
+        r.receivers.clear();
+        let ev = e.handle(Command::Run { run: r }, vec![], &mut |_| {}).event;
+        let Event::RunDone { results, .. } = ev else { panic!("{ev:?}") };
+        assert_eq!(results.leak_fraction, 0.0);
+        let rec = &results.receivers[0];
+        assert_eq!(rec.id, "R1");
+        // Eyring for 144 m³, 180 m², α = 0.1 is 0.161 · 144 / 19.0 = 1.22 s, less a little for air.
+        let t30 = rec.t30_s[4].unwrap();
+        assert!((t30 - 1.2).abs() < 0.15, "{t30}");
+        assert!(rec.c80_db[4].is_some());
     }
 
     #[test]

@@ -14,6 +14,7 @@ ra-core.workspace = true
 ra-geom.workspace = true
 ra-speaker.workspace = true
 serde.workspace = true
+libm.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [lints]

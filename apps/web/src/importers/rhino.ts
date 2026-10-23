@@ -3,7 +3,7 @@
 // curved faces use the render mesh saved in the file. Coordinates stay in
 // model units; groups are full layer paths.
 import type { Brep, BrepTrim, File3dmObject, Layer, Mesh, RhinoModule } from 'rhino3dm';
-import { SceneBuilder, SkipList, identity, mirrors, mul4, sub, transform, triangulatePolygon, type Mat4, type Vec3 } from './geometry';
+import { SceneBuilder, SkipList, identity, mirrors, mul4, pointRole, sub, transform, triangulatePolygon, type Mat4, type Vec3 } from './geometry';
 import type { GeometryImporter, ImportOptions, RawScene } from './types';
 
 const UNIT_TO_METRES: Record<string, number> = {
@@ -172,6 +172,17 @@ export function importRhino(rhino: RhinoModule, bytes: ArrayBuffer, opts: Import
       case OT.Surface:
         addBrep(rhino.Brep.createFromSurface(g as never), M, object, layerPath, material);
         break;
+      case OT.Point: {
+        // Point objects on a sources or receivers layer place them; others are ignored.
+        const role = pointRole(layerPath);
+        if (!role) {
+          ignored.set('Point', (ignored.get('Point') ?? 0) + 1);
+          break;
+        }
+        const n = scene.pointCount(role) + 1;
+        scene.addPoint(a.name || `${role === 'source' ? 'S' : 'R'}${n}`, role, transform(M, (g as unknown as { location: number[] }).location));
+        break;
+      }
       case OT.SubD:
         skipped.add(object, 'SubD: convert to a mesh in Rhino before export');
         break;

@@ -36,6 +36,33 @@ pub struct SceneMeta {
     pub importer: String,
 }
 
+/// A named source or receiver position, in metres, Z up, relative to `SceneMeta::origin`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Point {
+    pub id: String,
+    pub position: [f64; 3],
+    /// Read from the model (a point object on a sources or receivers layer). Re-importing the
+    /// model replaces these and keeps the ones added in the app.
+    #[serde(default)]
+    pub from_model: bool,
+}
+
+/// Where the sound comes from and where it is listened to.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Setup {
+    /// Omnidirectional sources; loudspeakers come with the speaker work.
+    pub sources: Vec<Point>,
+    pub receivers: Vec<Point>,
+}
+
+impl Setup {
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty() && self.receivers.is_empty()
+    }
+}
+
 /// The binary half of a scene, already in metres, Z up, relative to `SceneMeta::origin`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SceneArrays {
