@@ -5,9 +5,14 @@
 //! workers; results are merged in chunk order, so the numbers never depend on
 //! how many cores ran them.
 
+pub mod bvh;
 pub mod null;
+pub mod rt;
 
-use ra_core::{BandSet, Material, SceneArrays, SceneMeta};
+use std::sync::Arc;
+
+use bvh::Bvh;
+use ra_core::{AirConditions, BandSet, Material, SceneArrays, SceneMeta};
 use ra_speaker::SpeakerModel;
 use serde::{Deserialize, Serialize};
 
@@ -24,9 +29,15 @@ pub struct RunRequest {
     pub n_rays: u64,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub seed: u64,
-    /// Per band, 1/m. `None` = ISO 9613-1 from temperature and humidity.
+    /// Per band, 1/m. `None` = ISO 9613-1 from `air`.
     #[serde(default)]
     pub air_absorption_per_m: Option<Vec<f32>>,
+    /// Temperature and humidity: the speed of sound and, unless given above, air absorption.
+    #[serde(default)]
+    pub air: AirConditions,
+    /// Radius of the receiver spheres that count passing rays, m.
+    #[serde(default = "default_receiver_radius")]
+    pub receiver_radius_m: f64,
     /// Length of the histograms, seconds.
     pub duration_s: f32,
     pub receivers: Vec<String>,
@@ -35,6 +46,18 @@ pub struct RunRequest {
     /// Receivers that also get ambisonic responses for listening.
     #[serde(default)]
     pub listening: Vec<String>,
+}
+
+fn default_receiver_radius() -> f64 {
+    0.5
+}
+
+/// A named position in the scene, m, Z up, relative to the scene origin.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Point {
+    pub id: String,
+    pub position: [f64; 3],
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -66,6 +89,23 @@ pub struct PreparedScene {
     /// Indexed by group, from the group's assigned acoustic material.
     pub materials: Vec<Material>,
     pub speakers: Vec<SpeakerModel>,
+    /// Omnidirectional sources; loudspeakers come with the speaker work.
+    pub sources: Vec<Point>,
+    pub receivers: Vec<Point>,
+    pub bvh: Arc<Bvh>,
+}
+
+impl PreparedScene {
+    pub fn new(
+        meta: SceneMeta,
+        arrays: SceneArrays,
+        materials: Vec<Material>,
+        sources: Vec<Point>,
+        receivers: Vec<Point>,
+    ) -> Self {
+        let bvh = Arc::new(Bvh::new(&arrays));
+        PreparedScene { meta, arrays, materials, speakers: Vec::new(), sources, receivers, bvh }
+    }
 }
 
 /// Energy histogram at one receiver, `[bands][bins]` row-major.
@@ -167,7 +207,7 @@ pub fn chunk_seed(run_seed: u64, index: u64) -> u64 {
 
 /// All solvers this build carries.
 pub fn solvers() -> Vec<Box<dyn Solver>> {
-    vec![Box::new(null::NullSolver)]
+    vec![Box::new(null::NullSolver), Box::new(rt::RayTracer)]
 }
 
 #[cfg(test)]

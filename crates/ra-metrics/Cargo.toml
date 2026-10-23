@@ -11,5 +11,9 @@ ra-engine.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+ra-core.workspace = true
+ra-geom.workspace = true
+
 [lints]
 workspace = true
