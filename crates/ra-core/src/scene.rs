@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 /// Bit 0 of `tri_flags`: the triangle came from a curved or smoothed source face.
 pub const TRI_FLAG_CURVED: u8 = 1;
+/// Bit 1 of `tri_flags`: the triangle lies flat against another surface (a seat block on the
+/// floor, a panel fixed to a wall), so sound never reaches it. Set by the mesh checks.
+pub const TRI_FLAG_CONTACT: u8 = 2;
 
 /// One geometry group: the triangles on one source layer or tag.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

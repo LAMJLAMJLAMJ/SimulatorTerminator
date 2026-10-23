@@ -18,7 +18,7 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
 /// The format version this build writes.
 pub const FORMAT_MAJOR: u32 = 1;
-pub const FORMAT_MINOR: u32 = 0;
+pub const FORMAT_MINOR: u32 = 1;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -323,15 +323,27 @@ mod tests {
 }
 
 /// Every format version has a sample written by the browser build. Native code must
-/// read it and write it back byte for byte, which proves both builds write identical files.
+/// read it, and write the current version's sample back byte for byte, which proves both
+/// builds write identical files.
 #[cfg(test)]
 mod format_samples {
     #[test]
     fn browser_sample_round_trips_byte_for_byte() {
-        let browser = include_bytes!("../../../validation/formats/1.0-test-room.raproj");
+        let browser = include_bytes!("../../../validation/formats/1.1-test-room.raproj");
         let project = crate::read(browser).unwrap();
         let report = &project.scene.as_ref().unwrap().doc.report;
         assert_eq!(report.enclosed_volume_m3, Some(7200.0));
+        assert_eq!(report.room_volume_m3, Some(7200.0));
         assert_eq!(crate::write(&project).unwrap(), browser.to_vec());
+    }
+
+    #[test]
+    fn older_samples_still_open() {
+        let project =
+            crate::read(include_bytes!("../../../validation/formats/1.0-test-room.raproj")).unwrap();
+        let report = &project.scene.as_ref().unwrap().doc.report;
+        assert_eq!(report.enclosed_volume_m3, Some(7200.0));
+        // Fields added in 1.1 take their defaults.
+        assert_eq!(report.leak, None);
     }
 }
