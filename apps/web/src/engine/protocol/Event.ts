@@ -3,6 +3,7 @@ import type { Capabilities } from "./Capabilities";
 import type { Estimate } from "./Estimate";
 import type { ImportReport } from "./ImportReport";
 import type { Manifest } from "./Manifest";
+import type { Material } from "./Material";
 import type { SceneDoc } from "./SceneDoc";
 
-export type Event = { "type": "ok" } | { "type": "error", message: string, } | { "type": "capabilities" } & Capabilities | { "type": "project", manifest: Manifest, scene: SceneDoc | null, } | { "type": "scene_report", report: ImportReport, } | { "type": "estimate", estimate: Estimate, } | { "type": "progress", done: number, total: number, } | { "type": "run_done", chunks: number, receivers: number, };
+export type Event = { "type": "ok" } | { "type": "error", message: string, } | { "type": "capabilities" } & Capabilities | { "type": "project", manifest: Manifest, scene: SceneDoc | null, materials: Array<Material>, } | { "type": "scene_report", report: ImportReport, } | { "type": "estimate", estimate: Estimate, } | { "type": "progress", done: number, total: number, } | { "type": "run_done", chunks: number, receivers: number, };

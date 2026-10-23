@@ -30,4 +30,13 @@ for (const [file, importer] of [['hall.3dm', 'rhino3dm'], ['hall.skp', 'openskp'
   if (result.importer !== importer || !(result.report.triangles > 0)) throw new Error(`unexpected import ${JSON.stringify(result)}`);
   console.log(file, `${result.report.triangles} triangles, ${result.layers.length} layers`);
 }
+// Map layers from their names, then re-import: the mapping stays with the layers.
+const isCarpet = (key) => document.querySelector(`select[data-key="${key}"]`)?.value === 'Carpet, heavy';
+await page.click('#suggest');
+await page.waitForFunction(isCarpet, 'Floor carpet', { timeout: 10000 });
+await page.evaluate(() => (document.querySelector('#out').textContent = ''));
+await page.setInputFiles('#model', new URL('../test/fixtures/hall.skp', import.meta.url).pathname);
+await page.waitForFunction(() => document.querySelector('#out').textContent.startsWith('{'), null, { timeout: 30000 });
+await page.waitForFunction(isCarpet, 'Floor carpet', { timeout: 10000 });
+console.log('layer mapping kept across re-import');
 await browser.close();

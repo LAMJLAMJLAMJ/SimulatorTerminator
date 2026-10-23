@@ -5,6 +5,7 @@ import type { Estimate } from './protocol/Estimate';
 import type { Event } from './protocol/Event';
 import type { ImportReport } from './protocol/ImportReport';
 import type { Manifest } from './protocol/Manifest';
+import type { Material } from './protocol/Material';
 import type { RunRequest } from './protocol/RunRequest';
 import type { SceneDoc } from './protocol/SceneDoc';
 import type { RawScene } from '../importers/types';
@@ -15,6 +16,7 @@ import { WorkerTransport } from './worker-transport';
 export interface ProjectInfo {
   manifest: Manifest;
   scene: SceneDoc | null;
+  materials: Material[];
 }
 
 export interface Progress {
@@ -38,6 +40,20 @@ export class EngineConnector {
   async openProject(file: Blob): Promise<ProjectInfo> {
     const bytes = await file.arrayBuffer();
     return expect(await this.call({ type: 'open_project' }, [bytes]), 'project');
+  }
+
+  async project(): Promise<ProjectInfo> {
+    return expect(await this.call({ type: 'get_project' }), 'project');
+  }
+
+  /** Replaces the material library; layers whose material is dropped become unassigned. */
+  async setMaterials(materials: Material[]): Promise<ProjectInfo> {
+    return expect(await this.call({ type: 'set_materials', materials }), 'project');
+  }
+
+  /** Acoustic material per layer key; `null` unassigns. Layers not named are left as they are. */
+  async assignMaterials(assignments: Record<string, string | null>): Promise<ProjectInfo> {
+    return expect(await this.call({ type: 'assign_materials', assignments }), 'project');
   }
 
   async saveProject(): Promise<Blob> {

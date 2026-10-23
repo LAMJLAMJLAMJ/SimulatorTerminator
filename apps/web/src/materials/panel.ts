@@ -1,0 +1,61 @@
+// The layer-to-material table shown after a model is imported. Each change goes
+// straight to the engine, which keeps the mapping in the project.
+import type { EngineConnector, ProjectInfo } from '../engine/connector';
+import { starterMaterials, suggestMaterial } from './starter';
+
+export class MaterialsPanel {
+  constructor(
+    private engine: EngineConnector,
+    private root: HTMLElement,
+  ) {
+    root.querySelector<HTMLButtonElement>('#suggest')!.onclick = () => this.suggest();
+  }
+
+  /** Shows the scene's layers, loading the starter library into a project that has none. */
+  async show(): Promise<void> {
+    let project = await this.engine.project();
+    if (project.materials.length === 0) project = await this.engine.setMaterials(starterMaterials);
+    this.render(project);
+  }
+
+  private async suggest() {
+    const project = await this.engine.project();
+    const assignments: Record<string, string> = {};
+    for (const g of project.scene?.groups ?? []) {
+      const m = g.acoustic_material ? null : suggestMaterial(g.layer_path, project.materials);
+      if (m) assignments[g.key] = m;
+    }
+    this.render(await this.engine.assignMaterials(assignments));
+  }
+
+  private render({ scene, materials }: ProjectInfo) {
+    const body = this.root.querySelector('tbody')!;
+    body.replaceChildren();
+    this.root.hidden = !scene;
+    if (!scene) return;
+    scene.groups.forEach((g, i) => {
+      const select = document.createElement('select');
+      select.dataset.key = g.key;
+      select.append(new Option('(none)', ''), ...materials.map((m) => new Option(m.name, m.name)));
+      select.value = g.acoustic_material ?? '';
+      select.onchange = async () => {
+        try {
+          await this.engine.assignMaterials({ [g.key]: select.value || null });
+        } catch (e) {
+          alert(e instanceof Error ? e.message : String(e));
+          this.render(await this.engine.project());
+        }
+      };
+      const area = scene.report.group_area_m2[i] ?? 0;
+      const row = document.createElement('tr');
+      row.append(cell(g.layer_path), cell(area.toFixed(1)), cell(select));
+      body.append(row);
+    });
+  }
+}
+
+function cell(content: string | Node) {
+  const td = document.createElement('td');
+  td.append(content);
+  return td;
+}
