@@ -1,4 +1,5 @@
 import { createConnector } from './engine/connector';
+import { importExtensions, importModel } from './importers';
 import { testRoom } from './importers/test-room';
 
 const engine = createConnector();
@@ -6,6 +7,8 @@ const out = document.querySelector<HTMLPreElement>('#out')!;
 const caps = document.querySelector<HTMLParagraphElement>('#caps')!;
 const testButton = document.querySelector<HTMLButtonElement>('#test-room')!;
 const saveButton = document.querySelector<HTMLButtonElement>('#save')!;
+const modelInput = document.querySelector<HTMLInputElement>('#model')!;
+let projectName = 'test-room';
 
 const show = (x: unknown) => (out.textContent = JSON.stringify(x, null, 2));
 
@@ -14,19 +17,47 @@ engine
   .then((c) => {
     caps.textContent = `Engine ${c.engine_version} (${c.target}), project format ${c.format}`;
     testButton.disabled = false;
+    modelInput.disabled = false;
   })
   .catch((e) => (caps.textContent = `Engine failed to start: ${e}`));
 
 testButton.onclick = async () => {
   show(await engine.setScene(testRoom()));
+  projectName = 'test-room';
   saveButton.disabled = false;
+};
+
+modelInput.accept = importExtensions.join(',');
+modelInput.onchange = async () => {
+  const file = modelInput.files?.[0];
+  if (!file) return;
+  out.textContent = `Reading ${file.name}…`;
+  try {
+    const t0 = performance.now();
+    const raw = await importModel(file);
+    const seconds = +((performance.now() - t0) / 1000).toFixed(1);
+    const report = await engine.setScene(raw);
+    show({
+      file: file.name,
+      seconds,
+      importer: raw.importer,
+      layers: raw.groups.map((g) => g.layerPath),
+      report,
+      warnings: raw.warnings,
+      skipped: raw.skipped,
+    });
+    projectName = file.name.replace(/\.[^.]+$/, '');
+    saveButton.disabled = false;
+  } catch (e) {
+    out.textContent = `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`;
+  }
 };
 
 saveButton.onclick = async () => {
   const blob = await engine.saveProject();
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
-    download: 'test-room.raproj',
+    download: `${projectName}.raproj`,
   });
   a.click();
   URL.revokeObjectURL(a.href);
