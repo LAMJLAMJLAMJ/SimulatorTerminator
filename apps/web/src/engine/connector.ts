@@ -2,10 +2,12 @@ import type { BandSet } from './protocol/BandSet';
 import type { Capabilities } from './protocol/Capabilities';
 import type { Command } from './protocol/Command';
 import type { Estimate } from './protocol/Estimate';
+import type { AirConditions } from './protocol/AirConditions';
 import type { Event } from './protocol/Event';
 import type { ImportReport } from './protocol/ImportReport';
 import type { Manifest } from './protocol/Manifest';
 import type { Material } from './protocol/Material';
+import type { ReverberationReport } from './protocol/ReverberationReport';
 import type { RunRequest } from './protocol/RunRequest';
 import type { SceneDoc } from './protocol/SceneDoc';
 import type { RawScene } from '../importers/types';
@@ -86,6 +88,11 @@ export class EngineConnector {
       up_axis: raw.upAxis,
     };
     return expect(await this.call(cmd, bufs), 'scene_report').report;
+  }
+
+  /** Sabine and Eyring per band for the loaded scene and its layer materials. */
+  async reverberation(air: AirConditions): Promise<ReverberationReport> {
+    return expect(await this.call({ type: 'reverberation', air }), 'reverberation').report;
   }
 
   async estimate(run: RunRequest): Promise<Estimate> {

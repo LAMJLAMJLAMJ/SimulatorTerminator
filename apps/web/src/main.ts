@@ -1,6 +1,7 @@
 import { createConnector } from './engine/connector';
 import { importExtensions, importModel } from './importers';
 import { testRoom } from './importers/test-room';
+import { ReverberationPanel } from './acoustics/reverberation';
 import { MaterialsPanel } from './materials/panel';
 
 const engine = createConnector();
@@ -9,7 +10,9 @@ const caps = document.querySelector<HTMLParagraphElement>('#caps')!;
 const testButton = document.querySelector<HTMLButtonElement>('#test-room')!;
 const saveButton = document.querySelector<HTMLButtonElement>('#save')!;
 const modelInput = document.querySelector<HTMLInputElement>('#model')!;
-const materials = new MaterialsPanel(engine, document.querySelector<HTMLElement>('#materials')!);
+const reverbSection = document.querySelector<HTMLElement>('#reverb')!;
+const reverb = new ReverberationPanel(engine, reverbSection);
+const materials = new MaterialsPanel(engine, document.querySelector<HTMLElement>('#materials')!, () => reverb.update());
 let projectName = 'test-room';
 
 const show = (x: unknown) => (out.textContent = JSON.stringify(x, null, 2));
@@ -53,6 +56,8 @@ modelInput.onchange = async () => {
     projectName = file.name.replace(/\.[^.]+$/, '');
     saveButton.disabled = false;
     await materials.show();
+    reverbSection.hidden = false;
+    await reverb.update();
   } catch (e) {
     out.textContent = `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`;
   }

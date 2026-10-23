@@ -4,6 +4,7 @@
 //! measured or synthesised impulse responses.
 //!
 //! - ISO 3382-1:2009: EDT, T20, T30, C50, C80, D50, Ts
+//! - Sabine and Eyring reverberation time from volume and absorption
 //! - IEC 60268-16:2020 indirect method: MTF and STI (male weights, no
 //!   level-dependent masking or ambient noise yet)
 //!
@@ -11,6 +12,7 @@
 //! is not here yet; the engine writes per-band energy directly.
 
 pub mod decay;
+pub mod statistical;
 pub mod sti;
 
 pub use decay::{Band, band_from_energy, band_from_ir, dynamic_range_db, schroeder};

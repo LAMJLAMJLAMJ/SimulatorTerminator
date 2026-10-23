@@ -8,7 +8,7 @@
 use ra_core::SceneArrays;
 use serde::{Deserialize, Serialize};
 
-use crate::{Vec3, sub};
+use crate::{Vec3, cross, sub};
 
 /// Voxel sizes tried, smallest first, in metres.
 pub const VOXEL_SIZES_M: [f64; 5] = [0.1, 0.2, 0.5, 1.0, 2.0];
@@ -41,10 +41,100 @@ const START: u8 = 8;
 const ROOM: u8 = 9;
 
 pub fn leak_test(scene: &SceneArrays) -> Option<LeakReport> {
+    let (lo, hi) = bounds(scene)?;
+    let seed = seed(lo, hi);
+    let mut report = LeakReport { seed, ..Default::default() };
+    for h in VOXEL_SIZES_M {
+        match fill(scene, lo, hi, h) {
+            Fill::TooLarge => continue,
+            Fill::SeedInSurface => report.voxel_sizes_m.push(h),
+            Fill::Sealed { air_voxels, .. } => {
+                report.voxel_sizes_m.push(h);
+                report.sealed_at_voxel_m = Some(h);
+                report.air_volume_m3 = Some(air_voxels as f64 * h * h * h);
+                break;
+            }
+            Fill::Leaked { grid, state, from } => {
+                report.voxel_sizes_m.push(h);
+                report.leak_at = grid.leak_point(&state, from);
+            }
+        }
+    }
+    Some(report)
+}
+
+/// Where the room's air touches the surfaces, from the flood at `voxel_m`, the size the
+/// leak test found sealed. `None` when the room leaks at that size.
+pub struct RoomContact {
+    /// Per triangle, m²: the area for a surface with room air on one side, twice that for a
+    /// panel with air on both, 0 for faces outside the room or inside a wall.
+    pub facing_area_m2: Vec<f64>,
+    /// The flooded air plus half a voxel over the room's surfaces, m³: the voxels on a surface
+    /// are half in the room on average.
+    pub volume_m3: f64,
+}
+
+pub fn room_contact(scene: &SceneArrays, voxel_m: f64) -> Option<RoomContact> {
+    let (lo, hi) = bounds(scene)?;
+    let Fill::Sealed { grid, state, air_voxels } = fill(scene, lo, hi, voxel_m) else {
+        return None;
+    };
+    let h = voxel_m;
     let v = &scene.vertices;
+    let facing_area_m2: Vec<f64> = scene
+        .triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| v[i as usize].map(f64::from));
+            let n = cross(sub(b, a), sub(c, a));
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if len == 0.0 {
+                return 0.0;
+            }
+            let n = n.map(|x| x / len);
+            // Sample away from the edges: next to a corner of the room the step along the
+            // normal runs inside the other wall. Shrink the triangle about its incentre so
+            // every sample is 1.5 voxels from an edge, or use the incentre alone.
+            let [la, lb, lc] = [len3(sub(b, c)), len3(sub(c, a)), len3(sub(a, b))];
+            let perimeter = la + lb + lc;
+            let centre = [0, 1, 2].map(|i| (la * a[i] + lb * b[i] + lc * c[i]) / perimeter);
+            let shrink = (1.0 - 1.5 * h / (len / perimeter)).max(0.0);
+            let inset = [a, b, c].map(|p| [0, 1, 2].map(|i| centre[i] + shrink * (p[i] - centre[i])));
+            // Per sample, each side is room air, other air, or unknown when every step
+            // stays inside surfaces; unknown samples are left out.
+            let (mut sides, mut known) = (0usize, 0usize);
+            grid.each_sample(inset, 1.0, |p| {
+                let mut decided = false;
+                for side in [1.0, -1.0] {
+                    let off = [0.6, 1.2, 1.8]
+                        .iter()
+                        .map(|k| state[grid.index([0, 1, 2].map(|i| p[i] + side * k * h * n[i]))])
+                        .find(|&s| s != SOLID);
+                    decided |= off.is_some();
+                    sides += usize::from(off == Some(ROOM));
+                }
+                known += usize::from(decided);
+            });
+            // A face buried in other surfaces at this voxel size counts once.
+            if known == 0 {
+                return 0.5 * len;
+            }
+            0.5 * len * sides as f64 / known as f64
+        })
+        .collect();
+    let area: f64 = facing_area_m2.iter().sum();
+    Some(RoomContact { facing_area_m2, volume_m3: air_voxels as f64 * h * h * h + 0.5 * h * area })
+}
+
+fn len3(d: Vec3) -> f64 {
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
+fn bounds(scene: &SceneArrays) -> Option<(Vec3, Vec3)> {
     if scene.triangles.is_empty() {
         return None;
     }
+    let v = &scene.vertices;
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
     for &i in scene.triangles.iter().flatten() {
@@ -53,46 +143,64 @@ pub fn leak_test(scene: &SceneArrays) -> Option<LeakReport> {
             hi[k] = hi[k].max(f64::from(v[i as usize][k]));
         }
     }
-    let seed = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2] + 2f64.min((hi[2] - lo[2]) / 4.0)];
-    let mut report = LeakReport { seed, ..Default::default() };
+    Some((lo, hi))
+}
 
-    for h in VOXEL_SIZES_M {
-        let n = [0, 1, 2].map(|k| ((hi[k] - lo[k]) / h).ceil() as usize + 3);
-        let total = n[0] * n[1] * n[2];
-        if total > MAX_VOXELS {
-            continue;
-        }
-        report.voxel_sizes_m.push(h);
-        let grid = Grid { lo, h, n };
-        let mut state = vec![EMPTY; total];
-        for t in &scene.triangles {
-            let c = t.map(|i| v[i as usize].map(f64::from));
-            grid.rasterise(c, &mut state);
-        }
+/// The middle of the plan, 2 m above the lowest point (or a quarter of the height).
+fn seed(lo: Vec3, hi: Vec3) -> Vec3 {
+    [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, lo[2] + 2f64.min((hi[2] - lo[2]) / 4.0)]
+}
 
-        let mut queue = Vec::new();
-        state[0] = START;
-        flood(&grid, &mut state, &mut queue, 0, |d| REACHED + d as u8);
+enum Fill {
+    TooLarge,
+    /// The seed is inside a surface all the way up: the voxels are too coarse for the room.
+    SeedInSurface,
+    Sealed {
+        grid: Grid,
+        state: Vec<u8>,
+        air_voxels: usize,
+    },
+    Leaked {
+        grid: Grid,
+        state: Vec<u8>,
+        from: usize,
+    },
+}
 
-        // Step up out of the surface if the seed lands in a solid voxel, but not out
-        // through the top of the model: then the voxels are too coarse for this room.
-        let mut s = grid.index(seed);
-        while state[s] == SOLID && grid.centre(s + n[0] * n[1])[2] < hi[2] {
-            s += n[0] * n[1];
-        }
-        if state[s] == SOLID {
-            continue;
-        }
-        if state[s] == EMPTY {
-            state[s] = ROOM;
-            let air = 1 + flood(&grid, &mut state, &mut queue, s, |_| ROOM);
-            report.sealed_at_voxel_m = Some(h);
-            report.air_volume_m3 = Some(air as f64 * h * h * h);
-            break;
-        }
-        report.leak_at = grid.leak_point(&state, s);
+/// Voxelises the surfaces at size `h`, floods the outside, then the room from the seed.
+fn fill(scene: &SceneArrays, lo: Vec3, hi: Vec3, h: f64) -> Fill {
+    let v = &scene.vertices;
+    let n = [0, 1, 2].map(|k| ((hi[k] - lo[k]) / h).ceil() as usize + 3);
+    let total = n[0] * n[1] * n[2];
+    if total > MAX_VOXELS {
+        return Fill::TooLarge;
     }
-    Some(report)
+    let grid = Grid { lo, h, n };
+    let mut state = vec![EMPTY; total];
+    for t in &scene.triangles {
+        let c = t.map(|i| v[i as usize].map(f64::from));
+        grid.each_sample(c, 0.45, |p| state[grid.index(p)] = SOLID);
+    }
+
+    let mut queue = Vec::new();
+    state[0] = START;
+    flood(&grid, &mut state, &mut queue, 0, |d| REACHED + d as u8);
+
+    // Step up out of the surface if the seed lands in a solid voxel, but not out
+    // through the top of the model: then the voxels are too coarse for this room.
+    let mut s = grid.index(seed(lo, hi));
+    while state[s] == SOLID && grid.centre(s + n[0] * n[1])[2] < hi[2] {
+        s += n[0] * n[1];
+    }
+    if state[s] == SOLID {
+        return Fill::SeedInSurface;
+    }
+    if state[s] == EMPTY {
+        state[s] = ROOM;
+        let air_voxels = 1 + flood(&grid, &mut state, &mut queue, s, |_| ROOM);
+        return Fill::Sealed { grid, state, air_voxels };
+    }
+    Fill::Leaked { grid, state, from: s }
 }
 
 struct Grid {
@@ -130,19 +238,18 @@ impl Grid {
         steps.into_iter().enumerate().filter(|(_, (ok, _))| *ok).map(|(d, (_, j))| (j, d))
     }
 
-    /// Marks every voxel the triangle passes through, sampling it at under half a voxel.
-    fn rasterise(&self, [a, b, c]: [Vec3; 3], state: &mut [u8]) {
+    /// Points spread over the triangle, under `spacing` voxels apart.
+    fn each_sample(&self, [a, b, c]: [Vec3; 3], spacing: f64, mut f: impl FnMut(Vec3)) {
         let len = |p: Vec3, q: Vec3| {
             let d = sub(p, q);
             (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
         };
         let longest = len(a, b).max(len(b, c)).max(len(c, a));
-        let s = ((longest / (self.h * 0.45)).ceil() as usize).max(1);
+        let s = ((longest / (self.h * spacing)).ceil() as usize).max(1);
         for i in 0..=s {
             for j in 0..=s - i {
                 let (u, w) = (i as f64 / s as f64, j as f64 / s as f64);
-                let p = [0, 1, 2].map(|k| a[k] * (1.0 - u - w) + b[k] * u + c[k] * w);
-                state[self.index(p)] = SOLID;
+                f([0, 1, 2].map(|k| a[k] * (1.0 - u - w) + b[k] * u + c[k] * w));
             }
         }
     }
@@ -201,7 +308,57 @@ fn flood(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shoebox;
+    use crate::{shoebox, tri_area};
+
+    fn facing(s: &SceneArrays, h: f64) -> (f64, f64) {
+        let c = room_contact(s, h).unwrap();
+        (c.facing_area_m2.iter().sum(), c.volume_m3)
+    }
+
+    #[test]
+    fn room_contact_of_a_box() {
+        // Sizes off the voxel grid, as real rooms are.
+        let [x, y, z] = [6.03, 8.07, 3.01];
+        let (s, v) = (2.0 * (x * y + y * z + z * x), x * y * z);
+        for h in [0.1, 0.2, 0.5] {
+            let (area, volume) = facing(&shoebox([x as f32, y as f32, z as f32]), h);
+            assert!((area / s - 1.0).abs() < 0.01, "{h}: {area} for {s}");
+            assert!((volume / v - 1.0).abs() < 0.04, "{h}: {volume} for {v}");
+        }
+    }
+
+    #[test]
+    fn hung_panel_counts_twice_and_outside_faces_not_at_all() {
+        let mut s = shoebox([6.0, 8.0, 3.0]);
+        let base = s.vertices.len() as u32;
+        // A 2 x 2 m panel hung at 2 m, and a 4 x 4 m slab 1 m outside the room.
+        s.vertices.extend([[2.0, 3.0, 2.0], [4.0, 3.0, 2.0], [4.0, 5.0, 2.0], [2.0, 5.0, 2.0]]);
+        s.vertices.extend([[-1.0, 0.0, 0.0], [-1.0, 4.0, 0.0], [-1.0, 4.0, 3.0], [-1.0, 0.0, 3.0]]);
+        for q in [base, base + 4] {
+            s.triangles.extend([[q, q + 1, q + 2], [q, q + 2, q + 3]]);
+            s.tri_group.extend([0, 0]);
+        }
+        let c = room_contact(&s, 0.1).unwrap();
+        let n = s.triangles.len();
+        let panel: f64 = c.facing_area_m2[n - 4..n - 2].iter().sum();
+        let outside: f64 = c.facing_area_m2[n - 2..].iter().sum();
+        assert!((panel - 8.0).abs() < 0.4, "{panel}");
+        assert_eq!(outside, 0.0);
+        let room: f64 = c.facing_area_m2[..n - 4].iter().sum();
+        let shell: f64 = s.triangles[..n - 4]
+            .iter()
+            .map(|t| tri_area(t.map(|i| s.vertices[i as usize].map(f64::from))))
+            .sum();
+        assert!((room / shell - 1.0).abs() < 0.02, "{room} {shell}");
+    }
+
+    #[test]
+    fn no_room_contact_when_leaking() {
+        let mut s = shoebox([6.0, 8.0, 3.0]);
+        s.triangles.drain(10..12);
+        s.tri_group.drain(10..12);
+        assert!(room_contact(&s, 0.1).is_none());
+    }
 
     #[test]
     fn closed_box_is_sealed_at_the_finest_size() {
