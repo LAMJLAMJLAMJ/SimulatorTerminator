@@ -64,7 +64,7 @@ pub enum Event {
     Ok,
     Error { message: String },
     Capabilities(Capabilities),
-    Project { manifest: ra_project::Manifest, scene: Option<SceneDoc> },
+    Project { manifest: ra_project::Manifest, scene: Option<Box<SceneDoc>> },
     SceneReport { report: ImportReport },
     Estimate { estimate: Estimate },
     Progress { done: u32, total: u32 },
@@ -189,7 +189,7 @@ impl Engine {
                     tri_flags: (!bufs[3].is_empty()).then(|| bufs[3].clone()),
                 };
                 arrays.validate(meta.groups.len()).map_err(EngineError::Invalid)?;
-                let report = ra_geom::check_mesh(&arrays);
+                let (arrays, report) = ra_geom::prepare(&arrays, meta.groups.len());
                 self.project.scene = Some(Scene { doc: SceneDoc { meta, report: report.clone() }, arrays });
                 Event::SceneReport { report }.into()
             }
@@ -215,7 +215,7 @@ impl Engine {
     fn project_event(&self) -> Event {
         Event::Project {
             manifest: self.project.manifest.clone(),
-            scene: self.project.scene.as_ref().map(|s| s.doc.clone()),
+            scene: self.project.scene.as_ref().map(|s| Box::new(s.doc.clone())),
         }
     }
 
@@ -328,12 +328,16 @@ mod tests {
     #[test]
     fn millimetre_y_up_model_becomes_metres_z_up() {
         let mut e = Engine::new();
-        let cmd = r#"{"type":"set_scene","meta":{"origin":[0,0,0],"groups":[],"importer":"t"},"unit_scale_to_metres":0.001,"up_axis":"y"}"#;
-        let v: Vec<u8> = [1000.0f32, 2000.0, 3000.0].iter().flat_map(|x| x.to_le_bytes()).collect();
-        let (reply, _) = e.handle_json(cmd, vec![v, vec![], vec![]], &mut |_| {});
+        let cmd = r#"{"type":"set_scene","meta":{"origin":[0,0,0],"groups":[{"key":"A","layer_path":"A","label":"A"}],"importer":"t"},"unit_scale_to_metres":0.001,"up_axis":"y"}"#;
+        let v: Vec<u8> = [1000.0f32, 2000.0, 3000.0, 2000.0, 2000.0, 3000.0, 1000.0, 2000.0, 4000.0]
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
+        let t: Vec<u8> = [0u32, 1, 2].iter().flat_map(|x| x.to_le_bytes()).collect();
+        let (reply, _) = e.handle_json(cmd, vec![v, t, vec![0, 0]], &mut |_| {});
         assert!(reply.contains("scene_report"), "{reply}");
         let s = e.project.scene.as_ref().unwrap();
-        assert_eq!(s.arrays.vertices, vec![[1.0, -3.0, 2.0]]);
+        assert_eq!(s.arrays.vertices, vec![[1.0, -3.0, 2.0], [2.0, -3.0, 2.0], [1.0, -4.0, 2.0]]);
     }
 
     #[test]
