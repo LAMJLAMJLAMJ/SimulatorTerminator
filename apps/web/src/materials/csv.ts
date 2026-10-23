@@ -1,7 +1,8 @@
 // Reads a material library from a spreadsheet saved as CSV: one material per row,
 // absorption (and optionally scattering) per frequency band in columns. Column headers
 // carry the frequency ("125", "1k", "a 500 Hz"); scattering columns start with "s" or
-// say "scatter". Third-octave columns are averaged into octaves.
+// say "scatter". Third-octave columns are averaged into octaves. Rows above the header,
+// like a title or legend, are ignored.
 import type { Material } from '../engine/protocol/Material';
 
 /** The project's octave bands, Hz. */
@@ -25,39 +26,54 @@ interface Column {
 }
 
 export function parseMaterialCsv(text: string, fileName = 'CSV'): LibraryImport {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.length < 2) throw new Error(`${fileName} needs a header row and at least one material`);
-  const delimiter = [';', '\t', ','].reduce((best, d) => (count(lines[0], d) > count(lines[0], best) ? d : best), ',');
-  const rows = lines.map((l) => splitRow(l, delimiter));
-  const header = rows[0].map((h) => h.trim());
+  text = text.replace(/^\uFEFF/, '');
+  const head = text.split(/\r?\n/, 20).join('\n');
+  const delimiter = [';', '\t', ','].reduce((best, d) => (count(head, d) > count(head, best) ? d : best), ',');
+  const rows = splitRows(text, delimiter);
 
-  const nameCol = Math.max(0, header.findIndex((h) => /^(name|material|description|product)$/i.test(h)));
-  const sourceCol = header.findIndex((h) => /source|reference|^ref/i.test(h));
-  const columns: Column[] = [];
-  header.forEach((h, index) => {
-    if (index === nameCol || index === sourceCol) return;
-    const hz = frequency(h);
-    if (hz) columns.push({ index, hz, scattering: /^s(?![a-z])|scatter/i.test(h) });
-  });
-  if (!columns.some((c) => !c.scattering)) {
+  // Exported workbooks often have a title or legend above the table: the header is
+  // the first row that names at least three bands.
+  const columnsOf = (header: string[]): Column[] =>
+    header.flatMap((h, index) => {
+      const hz = frequency(h);
+      return hz ? [{ index, hz, scattering: /^s(?![a-z])|scatter/i.test(h.trim()) }] : [];
+    });
+  const headerRow = rows.slice(0, 50).findIndex((r) => columnsOf(r).filter((c) => !c.scattering).length >= 3);
+  if (headerRow < 0) {
     throw new Error(`${fileName} has no frequency columns; headers should name the band, like 125 or 1k`);
   }
+  const header = rows[headerRow].map((h) => h.trim());
+  const nameCol = Math.max(0, header.findIndex((h) => /^(name|material|description|product)$/i.test(h)));
+  const sourceCol = header.findIndex((h) => /source|reference|^ref/i.test(h));
+  const idCol = header.findIndex((h) => /^(id|no\.?|nr\.?|number|#)$/i.test(h));
+  const columns = columnsOf(header).filter((c) => c.index !== nameCol && c.index !== sourceCol);
 
   // A decimal comma is only possible when commas are not the delimiter.
   const number = (s: string) => Number((delimiter === ',' ? s : s.replace(',', '.')).trim());
-  const body = rows.slice(1);
-  const all = body.flatMap((r) => columns.map((c) => number(r[c.index] ?? '')).filter(Number.isFinite));
-  const percent = Math.max(...all) > 1.5;
+  const body = rows.slice(headerRow + 1);
+  // A percentage file has most values above 1; a few coefficients above 1 are normal
+  // for ISO 354 measurements of thick or hung absorbers.
+  const all = body
+    .flatMap((r) => columns.filter((c) => !c.scattering).map((c) => r[c.index] ?? ''))
+    .filter((s) => s.trim() !== '')
+    .map(number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  const percent = all.length > 0 && all[Math.floor(all.length / 2)] > 1.5;
 
   const warnings: string[] = [];
-  if (percent) warnings.push('Values above 1.5 found: read the whole file as percentages.');
+  if (percent) warnings.push('Most values are above 1.5: read the whole file as percentages.');
   const hasScattering = columns.some((c) => c.scattering);
   if (!hasScattering) warnings.push(`No scattering columns: every material gets ${DEFAULT_SCATTERING}.`);
+  // Problems that can hit many rows of a large library are listed once, with examples.
+  const groups = new Map<string, string[]>();
+  const note = (problem: string, row: string) => groups.set(problem, [...(groups.get(problem) ?? []), row]);
 
   const byName = new Map<string, Material>();
   body.forEach((r, i) => {
-    const line = i + 2;
-    const name = (r[nameCol] ?? '').trim();
+    // The row number in the spreadsheet the file was saved from.
+    const line = `row ${headerRow + i + 2}`;
+    const name = (r[nameCol] ?? '').replace(/\s+/g, ' ').trim();
     if (!name) return;
     const values = (scattering: boolean) => {
       const at = new Map<number, number>();
@@ -65,33 +81,45 @@ export function parseMaterialCsv(text: string, fileName = 'CSV'): LibraryImport 
         const v = number(r[c.index] ?? '');
         if (Number.isFinite(v) && (r[c.index] ?? '').trim() !== '') at.set(c.hz, percent ? v / 100 : v);
       }
-      return toOctaves(at);
+      return at.size ? toOctaves(at) : undefined;
     };
     const absorption = values(false);
-    if (!absorption.values) {
-      warnings.push(`Line ${line}, ${name}: skipped, ${absorption.problem}.`);
+    if (!absorption?.values) {
+      note(`skipped, ${absorption?.problem ?? 'no absorption values'}`, `${line}, ${name}`);
       return;
     }
-    const scattering = hasScattering ? values(true) : { values: OCTAVES.map(() => DEFAULT_SCATTERING), notes: [] };
-    if (!scattering.values) {
-      warnings.push(`Line ${line}, ${name}: skipped, scattering ${scattering.problem}.`);
-      return;
+    let scattering = hasScattering ? values(true) : undefined;
+    if (hasScattering && !scattering?.values) {
+      note(`incomplete or no scattering, ${DEFAULT_SCATTERING} used`, `${line}, ${name}`);
+      scattering = undefined;
     }
-    const clamped = [...absorption.values, ...scattering.values].some((v) => v > 1 || v < 0);
-    if (clamped) warnings.push(`Line ${line}, ${name}: values outside 0 to 1 were clipped.`);
-    const clip = (v: number) => Math.min(1, Math.max(0, v));
-    if (byName.has(name)) warnings.push(`Line ${line}: a second "${name}" replaces the first.`);
-    const notes = [...new Set([...absorption.notes, ...scattering.notes])];
+    const scatter = scattering?.values ?? OCTAVES.map(() => DEFAULT_SCATTERING);
+    const clamped = [...absorption.values, ...scatter].some((v) => v > 1 || v < 0);
+    if (clamped) note('values outside 0 to 1 clipped', `${line}, ${name}`);
+    const clip = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 1000) / 1000;
+    // Large libraries repeat names for different products or mountings: keep each one.
+    let unique = name;
+    if (byName.has(unique)) {
+      const id = idCol >= 0 ? (r[idCol] ?? '').trim() : '';
+      unique = id && !byName.has(`${name} (${id})`) ? `${name} (${id})` : name;
+      for (let k = 2; byName.has(unique); k++) unique = `${name} (${k})`;
+      note('same name as an earlier row, renamed', `${line}, ${unique}`);
+    }
+    const notes = [...new Set([...absorption.notes, ...(scattering?.notes ?? [])])];
     const source = [sourceCol >= 0 ? (r[sourceCol] ?? '').trim() : '', `imported from ${fileName}`, ...notes]
       .filter(Boolean)
       .join('; ');
-    byName.set(name, {
-      name,
+    byName.set(unique, {
+      name: unique,
       absorption: absorption.values.map(clip),
-      scattering: scattering.values.map(clip),
+      scattering: scatter.map(clip),
       source,
     });
   });
+  for (const [problem, where] of groups) {
+    const examples = where.slice(0, 3).join('; ') + (where.length > 3 ? '; …' : '');
+    warnings.push(`${where.length} ${where.length === 1 ? 'row' : 'rows'} ${problem} (${examples}).`);
+  }
   return { materials: [...byName.values()], warnings };
 }
 
@@ -101,8 +129,11 @@ function toOctaves(at: Map<number, number>): { values?: number[]; notes: string[
   const out: (number | undefined)[] = OCTAVES.map((hz) => {
     if (at.has(hz) && ![hz / 1.26, hz * 1.26].some((t) => at.has(nearestThird(t)))) return at.get(hz);
     const thirds = [-1, 0, 1].map((k) => at.get(THIRDS[THIRDS.indexOf(hz) + k]));
-    if (thirds.every((v) => v !== undefined)) return (thirds[0]! + thirds[1]! + thirds[2]!) / 3;
-    return at.get(hz);
+    const given = thirds.filter((v) => v !== undefined);
+    if (given.length === 3 || at.has(hz)) return given.length === 3 ? (given[0] + given[1] + given[2]) / 3 : at.get(hz);
+    // Measurements that start or stop inside an octave, at 160 Hz say.
+    if (given.length) notes.push(`${label(hz)} from ${given.length} of its 3 third octaves`);
+    return given.length ? given.reduce((a, b) => a + b) / given.length : undefined;
   });
   if (out[0] === undefined && out[1] !== undefined) {
     out[0] = out[1];
@@ -137,27 +168,34 @@ function count(s: string, ch: string) {
   return s.split(ch).length - 1;
 }
 
-/** Splits one CSV line, honouring double quotes. */
-function splitRow(line: string, delimiter: string): string[] {
-  const out: string[] = [];
+/** Splits CSV text into rows of cells, honouring double quotes, which may hold delimiters and line breaks. */
+function splitRows(text: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
   let cur = '';
   let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (quoted) {
-      if (ch === '"' && line[i + 1] === '"') {
+      if (ch === '"' && text[i + 1] === '"') {
         cur += '"';
         i++;
       } else if (ch === '"') quoted = false;
       else cur += ch;
     } else if (ch === '"') quoted = true;
     else if (ch === delimiter) {
-      out.push(cur);
+      row.push(cur);
+      cur = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur);
+      rows.push(row);
+      row = [];
       cur = '';
     } else cur += ch;
   }
-  out.push(cur);
-  return out;
+  if (cur !== '' || row.length) rows.push([...row, cur]);
+  return rows;
 }
 
 /** The library after an import: same names are replaced, new ones added at the end. */
