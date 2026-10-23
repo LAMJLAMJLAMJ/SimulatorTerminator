@@ -39,4 +39,11 @@ await page.setInputFiles('#model', new URL('../test/fixtures/hall.skp', import.m
 await page.waitForFunction(() => document.querySelector('#out').textContent.startsWith('{'), null, { timeout: 30000 });
 await page.waitForFunction(isCarpet, 'Floor carpet', { timeout: 10000 });
 console.log('layer mapping kept across re-import');
+
+// A material library from CSV joins the pickers.
+await page.setInputFiles('#library', new URL('../test/fixtures/materials-sample.csv', import.meta.url).pathname);
+await page.waitForFunction(() => document.querySelector('#library-status').textContent.startsWith('Imported 2'), null, { timeout: 10000 });
+const names = await page.$$eval('select[data-key="Floor carpet"] option', (os) => os.map((o) => o.value));
+if (!names.includes('Plaster on brick')) throw new Error(`library import missing: ${names}`);
+console.log('material library imported from CSV');
 await browser.close();

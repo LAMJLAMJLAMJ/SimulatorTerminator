@@ -1,6 +1,7 @@
 // The layer-to-material table shown after a model is imported. Each change goes
 // straight to the engine, which keeps the mapping in the project.
 import type { EngineConnector, ProjectInfo } from '../engine/connector';
+import { mergeLibrary, parseMaterialCsv } from './csv';
 import { starterMaterials, suggestMaterial } from './starter';
 
 export class MaterialsPanel {
@@ -9,6 +10,25 @@ export class MaterialsPanel {
     private root: HTMLElement,
   ) {
     root.querySelector<HTMLButtonElement>('#suggest')!.onclick = () => this.suggest();
+    const input = root.querySelector<HTMLInputElement>('#library')!;
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      input.value = '';
+      if (file) await this.importLibrary(file);
+    };
+  }
+
+  /** Adds the materials in a CSV file to the library; same names replace the old ones. */
+  async importLibrary(file: File): Promise<void> {
+    const status = this.root.querySelector<HTMLElement>('#library-status')!;
+    try {
+      const { materials, warnings } = parseMaterialCsv(await file.text(), file.name);
+      const project = await this.engine.project();
+      this.render(await this.engine.setMaterials(mergeLibrary(project.materials, materials)));
+      status.textContent = [`Imported ${materials.length} materials from ${file.name}.`, ...warnings].join('\n');
+    } catch (e) {
+      status.textContent = `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`;
+    }
   }
 
   /** Shows the scene's layers, loading the starter library into a project that has none. */
