@@ -1,5 +1,6 @@
 // Loads the built app in headless Chromium, sends a test room through the wasm
-// engine, and saves the project. Usage: node e2e/smoke.mjs <out.raproj> [url]
+// engine, and saves the project; then imports the .3dm and .skp fixtures.
+// Usage: node e2e/smoke.mjs <out.raproj> [url]
 // Set CHROMIUM_PATH to use a preinstalled browser.
 import { chromium } from 'playwright';
 
@@ -20,4 +21,13 @@ if (report.enclosed_volume_m3 !== 7200) throw new Error(`unexpected report ${JSO
 const [download] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);
 await download.saveAs(out);
 console.log('saved', out);
+
+// Then read the Rhino and SketchUp fixtures through the import worker.
+for (const [file, importer] of [['hall.3dm', 'rhino3dm'], ['hall.skp', 'openskp']]) {
+  await page.setInputFiles('#model', new URL(`../test/fixtures/${file}`, import.meta.url).pathname);
+  await page.waitForFunction(() => document.querySelector('#out').textContent.startsWith('{'), null, { timeout: 30000 });
+  const result = JSON.parse(await page.textContent('#out'));
+  if (result.importer !== importer || !(result.report.triangles > 0)) throw new Error(`unexpected import ${JSON.stringify(result)}`);
+  console.log(file, `${result.report.triangles} triangles, ${result.layers.length} layers`);
+}
 await browser.close();
