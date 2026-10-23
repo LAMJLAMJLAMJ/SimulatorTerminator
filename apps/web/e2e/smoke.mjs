@@ -31,7 +31,7 @@ for (const [file, importer] of [['hall.3dm', 'rhino3dm'], ['hall.skp', 'openskp'
   console.log(file, `${result.report.triangles} triangles, ${result.layers.length} layers`);
 }
 // Map layers from their names, then re-import: the mapping stays with the layers.
-const isCarpet = (key) => document.querySelector(`select[data-key="${key}"]`)?.value === 'Carpet, heavy';
+const isCarpet = (key) => document.querySelector(`select[data-key="${key}"]`)?.value === 'Carpet, heavy, on foam pad';
 await page.click('#suggest');
 await page.waitForFunction(isCarpet, 'Floor carpet', { timeout: 10000 });
 await page.evaluate(() => (document.querySelector('#out').textContent = ''));
