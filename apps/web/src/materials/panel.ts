@@ -22,7 +22,7 @@ export class MaterialsPanel {
   async importLibrary(file: File): Promise<void> {
     const status = this.root.querySelector<HTMLElement>('#library-status')!;
     try {
-      const { materials, warnings } = parseMaterialCsv(await file.text(), file.name);
+      const { materials, warnings } = parseMaterialCsv(decode(await file.arrayBuffer()), file.name);
       const project = await this.engine.project();
       this.render(await this.engine.setMaterials(mergeLibrary(project.materials, materials)));
       status.textContent = [`Imported ${materials.length} materials from ${file.name}.`, ...warnings].join('\n');
@@ -56,7 +56,7 @@ export class MaterialsPanel {
     scene.groups.forEach((g, i) => {
       const select = document.createElement('select');
       select.dataset.key = g.key;
-      select.append(new Option('(none)', ''), ...materials.map((m) => new Option(m.name, m.name)));
+      select.append(new Option('(none)', ''), ...materials.map((m) => option(m.name)));
       select.value = g.acoustic_material ?? '';
       select.onchange = async () => {
         try {
@@ -78,4 +78,20 @@ function cell(content: string | Node) {
   const td = document.createElement('td');
   td.append(content);
   return td;
+}
+
+/** Library names can be a whole product description: the list shows the start of it. */
+function option(name: string): HTMLOptionElement {
+  const o = new Option(name.length > 90 ? `${name.slice(0, 88)}…` : name, name);
+  o.title = name;
+  return o;
+}
+
+/** UTF-8, or Windows-1252 for a CSV saved by Excel without "UTF-8" in the format name. */
+function decode(bytes: ArrayBuffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
 }
